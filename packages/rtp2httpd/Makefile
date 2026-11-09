@@ -97,23 +97,31 @@ RTP2HTTPD_SOURCES := \
 RTP2HTTPD_SRC1 := $(PKG_BUILD_DIR)
 RTP2HTTPD_SRC2 := $(PKG_BUILD_DIR)/rtp2httpd-$(PKG_SOURCE_REF)
 
+# 预展开源文件完整路径（避免 recipe 中 shell 变量被 make 错误展开）
+RTP2HTTPD_SRC_FILES1 := $(addprefix $(RTP2HTTPD_SRC1)/,$(RTP2HTTPD_SOURCES))
+RTP2HTTPD_SRC_FILES2 := $(addprefix $(RTP2HTTPD_SRC2)/,$(RTP2HTTPD_SOURCES))
+
 define Build/Compile
 	$(INSTALL_DIR) $(PKG_INSTALL_DIR)/usr/bin
 	@if [ -f "$(RTP2HTTPD_SRC1)/src/rtp2httpd.c" ]; then \
-		SRC="$(RTP2HTTPD_SRC1)"; \
+		cd "$(RTP2HTTPD_SRC1)" && $(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -D_GNU_SOURCE \
+			-DSYSCONFDIR='"/etc"' -DPACKAGE='"rtp2httpd"' -DVERSION='"$(PKG_VERSION)"' \
+			-O3 -fstack-protector-strong \
+			-I src -o $(PKG_INSTALL_DIR)/usr/bin/rtp2httpd \
+			$(RTP2HTTPD_SRC_FILES1) \
+			-lpthread -lm; \
 	elif [ -f "$(RTP2HTTPD_SRC2)/src/rtp2httpd.c" ]; then \
-		SRC="$(RTP2HTTPD_SRC2)"; \
+		cd "$(RTP2HTTPD_SRC2)" && $(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -D_GNU_SOURCE \
+			-DSYSCONFDIR='"/etc"' -DPACKAGE='"rtp2httpd"' -DVERSION='"$(PKG_VERSION)"' \
+			-O3 -fstack-protector-strong \
+			-I src -o $(PKG_INSTALL_DIR)/usr/bin/rtp2httpd \
+			$(RTP2HTTPD_SRC_FILES2) \
+			-lpthread -lm; \
 	else \
 		echo "ERROR: rtp2httpd 源码未解压到 $(RTP2HTTPD_SRC1) 或 $(RTP2HTTPD_SRC2)" >&2; \
 		ls -la "$(RTP2HTTPD_SRC1)" >&2 2>/dev/null || true; \
 		exit 1; \
-	fi; \
-	cd "$$SRC" && $(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -D_GNU_SOURCE \
-		-DSYSCONFDIR='"/etc"' -DPACKAGE='"rtp2httpd"' -DVERSION='"$(PKG_VERSION)"' \
-		-O3 -fstack-protector-strong \
-		-I src -o $(PKG_INSTALL_DIR)/usr/bin/rtp2httpd \
-		$(foreach f,$(RTP2HTTPD_SOURCES),$$SRC/$(f)) \
-		-lpthread -lm
+	fi
 endef
 
 define Package/rtp2httpd/conffiles
