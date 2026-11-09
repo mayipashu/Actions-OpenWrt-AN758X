@@ -46,6 +46,16 @@ ADD_LUCI_APP=true       # qwe-qaq/luci-app 仓库（monorepo）
                         #   ├─ luci-app-natmode     NAT 类型三选一（网络 → NAT 类型）
                         #   ├─ luci-app-pon-status  PON 光模块卡片（概览页「系统」下一格）
                         #   └─ luci-app-igmpproxy    IGMP Proxy 组播代理 Web 界面
+# --- 2026-11 定制预装（homeproxy / tinc / frpc / n2n / samba4 / FileBrowser）---
+#     这几个全部来自官方 feeds：config 里 =y 即可，不需要在这里 clone。
+#     下面三个不在 feeds，需要单独拉取 / 替换源码。
+ADD_MESH=true           # luci-app-mesh（xxosdev）：802.11s 组网管理
+                        #   依赖按实机验证过的 devicefit 版裁剪：wpad-openssl(full)
+                        #   本身已带 mesh，不再强依赖 batman-adv / dawn / umdns
+ADD_TIMECONTROL=true    # luci-app-timecontrol（kavass168，apk 版）：上网时间控制
+                        #   构建期顺带修好上游 ACL 与匿名配置节问题
+ADD_RTP2HTTPD_FORK=true # rtp2httpd：用本人仓库 mayipashu/rtp2httpd 源码编译，
+                        #   替换 feeds 官方 3.16.0（详见 packages/rtp2httpd/）
 # 下面这几个开关都能被环境变量覆盖（: ${VAR:=默认} 的写法）：
 # workflow 里选了「不拉私有仓库」时会注入 ADD_FTTR=false，整段直接跳过。
 : "${ADD_FTTR:=true}"       # FTTR 全家桶总开关（下面的子开关都受它管）★仅 HM2004-DU
@@ -111,7 +121,7 @@ fi
 
 # =========================================================
 # h3c-fmcs / openwrt-fttr / h3c-fmcs-firmware —— FTTR 后端三件套 ★HM2004-DU 专属
-# 源：qwe-qaq/openwrt-fttr（私有仓库）
+# 源：LazuliKao/openwrt-fttr（私有仓库，作者已共享；可用 PRIVATE_REPO 覆盖）
 # ⚠ 这里必须用「裸 URL」：凭证由 workflow 的 GIT_ASKPASS 在认证时回调注入，
 #   千万别拼 token —— clone 的 echo 会把它打进日志。
 # ⚠ 该仓库是 feed 形态（根目录直接是包目录），拷进 package/custom/ 即可。
@@ -129,7 +139,7 @@ fi
 # =========================================================
 if [ "$ADD_FTTR" = "true" ] && [ "$FTTR_PROFILE" = "h3c_hm2004-du" ]; then
   # 仓库与分支由 workflow 注入，本地手工跑时回退到下面的默认值
-  FTTR_FEED_URL="https://github.com/${PRIVATE_REPO:-qwe-qaq/openwrt-fttr}"
+  FTTR_FEED_URL="https://github.com/${PRIVATE_REPO:-LazuliKao/openwrt-fttr}"
   FTTR_FEED_BRANCH="${PRIVATE_REPO_BRANCH:-main}"
   FTTR_FEED_TMP="$(mktemp -d)/openwrt-fttr"
   if ! clone "$FTTR_FEED_URL" "$FTTR_FEED_TMP" "$FTTR_FEED_BRANCH"; then
@@ -324,8 +334,26 @@ if [ "$ADD_MOSDNS" = "true" ]; then
   rm -rf "$MD_TMP"
 fi
 # --- lucky ---
+# 仓库是 monorepo：根目录没有 Makefile，真正的两个包在 lucky/（本体，预编译
+# 二进制按架构下载）与 luci-app-lucky/（界面，DEPENDS += lucky）子目录里，
+# 两个都要拷，只拷界面会因缺 lucky 依赖被索引丢弃。
 if [ "$ADD_LUCKY" = "true" ]; then
-  clone https://github.com/sirpdboy/luci-app-lucky "$PKG_DIR/luci-app-lucky" main
+  LUCKY_TMP="$(mktemp -d)/lucky"
+  if clone https://github.com/sirpdboy/luci-app-lucky "$LUCKY_TMP" main; then
+    for p in lucky luci-app-lucky; do
+      if [ ! -f "$LUCKY_TMP/$p/Makefile" ]; then
+        echo "::error::lucky 仓库里缺少 $p/Makefile（上游改结构了？）"
+        exit 1
+      fi
+      rm -rf "$PKG_DIR/$p"
+      cp -a "$LUCKY_TMP/$p" "$PKG_DIR/$p"
+      echo "✅ 已拷贝: $p"
+    done
+  else
+    echo "::error::luci-app-lucky 拉取失败，lucky 会被 defconfig 剔除"
+    exit 1
+  fi
+  rm -rf "$LUCKY_TMP"
 fi
 # --- tailscale ---
 if [ "$ADD_TAILSCALE" = "true" ]; then
@@ -363,7 +391,25 @@ if [ "$ADD_FLUENT" = "true" ] || [ "$ADD_FLUENT_LITE" = "true" ] || [ "$ADD_FLUE
 fi
 
 if [ "$ADD_EASYTIER" = "true" ]; then
-  clone https://github.com/EasyTier/luci-app-easytier "$PKG_DIR/luci-app-easytier" main
+  # 同样是 monorepo：easytier/ 是本体（按架构下载预编译 zip），
+  # luci-app-easytier/ 是界面。界面 DEPENDS 里只有 +kmod-tun +luci-compat，
+  # 不含 +easytier，所以本体必须在 config 里显式 =y。
+  ET_TMP="$(mktemp -d)/easytier"
+  if clone https://github.com/EasyTier/luci-app-easytier "$ET_TMP" main; then
+    for p in easytier luci-app-easytier; do
+      if [ ! -f "$ET_TMP/$p/Makefile" ]; then
+        echo "::error::easytier 仓库里缺少 $p/Makefile（上游改结构了？）"
+        exit 1
+      fi
+      rm -rf "$PKG_DIR/$p"
+      cp -a "$ET_TMP/$p" "$PKG_DIR/$p"
+      echo "✅ 已拷贝: $p"
+    done
+  else
+    echo "::error::luci-app-easytier 拉取失败，easytier 会被 defconfig 剔除"
+    exit 1
+  fi
+  rm -rf "$ET_TMP"
 fi
 if [ "$ADD_POWEROFF" = "true" ]; then
   clone https://github.com/sirpdboy/luci-app-poweroffdevice "$PKG_DIR/luci-app-poweroffdevice" master
@@ -398,6 +444,107 @@ if [ "$ADD_OAF" = "true" ]; then
     cp -r "$PKG_DIR/OpenAppFilter/$p" "$PKG_DIR/" 2>/dev/null
   done
   rm -rf "$PKG_DIR/OpenAppFilter"
+fi
+
+# --- mesh（xxosdev/luci-app-mesh）---
+# 802.11s 组网管理。仓库根目录就是完整 LuCI 包（Makefile + htdocs + root），
+# 整包拷进 package/custom/luci-app-mesh 即可。
+#
+# ⚠ 上游 LUCI_DEPENDS 带 +wpad-mesh-openssl +kmod-batman-adv +batctl
+#   +luci-proto-batman-adv +dawn +umdns。本机型（HM2004-DU）这样处理：
+#   ① wpad-openssl 是 full 变体，hostapd 的 full 本就 CONFIG_MESH=y，
+#      再拉 wpad-mesh-openssl 会与已有 wpad-openssl 争同一组文件；
+#   ② batman-adv / dawn / umdns 属于"可选增强"，802.11s 本身不需要，
+#      却会把 batman 内核模块等一起拖进固件、增加编译失败面。
+#   于是把依赖裁成与实机验证过的 luci-app-mesh_1.0.0-r58_all-devicefit.ipk
+#   完全一致的 8 项。
+if [ "$ADD_MESH" = "true" ]; then
+  MESH_TMP="$(mktemp -d)/mesh"
+  if clone https://github.com/xxosdev/luci-app-mesh "$MESH_TMP" main \
+     && [ -f "$MESH_TMP/Makefile" ]; then
+    rm -rf "$PKG_DIR/luci-app-mesh"
+    cp -a "$MESH_TMP" "$PKG_DIR/luci-app-mesh"
+    rm -rf "$PKG_DIR/luci-app-mesh/.git"
+    awk '
+      /^LUCI_DEPENDS:=/ {
+        print "LUCI_DEPENDS:=+uclient-fetch +rpcd +curl +jsonfilter +iwinfo +iw +wpad-openssl"
+        skip=1; next
+      }
+      skip && /^[[:space:]]+\+/ { next }
+      { skip=0; print }
+    ' "$PKG_DIR/luci-app-mesh/Makefile" > "$PKG_DIR/luci-app-mesh/Makefile.tmp" && \
+      mv "$PKG_DIR/luci-app-mesh/Makefile.tmp" "$PKG_DIR/luci-app-mesh/Makefile"
+    echo "✅ 已拷贝: luci-app-mesh（依赖已裁剪为 devicefit 版）"
+    grep -m1 '^LUCI_DEPENDS' "$PKG_DIR/luci-app-mesh/Makefile" || true
+  else
+    echo "::error::luci-app-mesh 拉取失败，mesh 会被 defconfig 剔除"
+    exit 1
+  fi
+  rm -rf "$MESH_TMP"
+fi
+
+# --- timecontrol（kavass168/luci-app-timecontrol-25.12）---
+# 包在仓库的 luci-app-timecontrol/ 子目录；前端通过 cgi-io/ubus exec 调脚本。
+# 上游两个已知问题在构建期直接修掉（等价于装机后跑 luci-app-timecontrol-postfix.sh）：
+#   ① ACL 里 "ubus":{"file":["exec"]} 是无效写法 → 前端 fs.exec_direct 全被拒，
+#      界面按钮（保存/重启/查流量/清日志）点了没反应；
+#   ② /etc/config/timecontrol 全局节是匿名的：后端读 @timecontrol[0]，
+#      前端读写 timecontrol.timecontrol，两边不是同一节 → 模式/强度不生效。
+if [ "$ADD_TIMECONTROL" = "true" ]; then
+  TC_TMP="$(mktemp -d)/timecontrol"
+  if clone https://github.com/kavass168/luci-app-timecontrol-25.12 "$TC_TMP" main \
+     && [ -f "$TC_TMP/luci-app-timecontrol/Makefile" ]; then
+    rm -rf "$PKG_DIR/luci-app-timecontrol"
+    cp -a "$TC_TMP/luci-app-timecontrol" "$PKG_DIR/luci-app-timecontrol"
+    TC_DIR="$PKG_DIR/luci-app-timecontrol"
+    WS_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
+    # ① ACL 换成修正版（源文件随本仓库提交：patches/luci-app-timecontrol/acl.json）
+    if [ -f "$WS_DIR/patches/luci-app-timecontrol/acl.json" ]; then
+      cp -f "$WS_DIR/patches/luci-app-timecontrol/acl.json" \
+        "$TC_DIR/root/usr/share/rpcd/acl.d/luci-app-timecontrol.json"
+      echo "✅ timecontrol: ACL 已替换为修正版"
+    else
+      echo "::warning::未找到 patches/luci-app-timecontrol/acl.json，ACL 仍是上游无效版本"
+    fi
+    # ② 默认配置的全局节改成命名节
+    TC_CFG="$TC_DIR/root/etc/config/timecontrol"
+    if [ -f "$TC_CFG" ]; then
+      sed -i "s/^config timecontrol[[:space:]]*\$/config timecontrol 'timecontrol'/" "$TC_CFG"
+    fi
+    # ③ 老配置兜底：匿名节自动改名（uci-defaults 按文件名顺序执行）
+    cat > "$TC_DIR/root/etc/uci-defaults/95-timecontrol-section" <<'TCPATCH'
+#!/bin/sh
+# 上游全局节是匿名的；后端读 @timecontrol[0]，前端读写 timecontrol.timecontrol。
+# 已存在匿名节时改名为命名节，两边才指向同一节。
+if uci -q get timecontrol.@timecontrol[0] >/dev/null 2>&1 && \
+   ! uci -q get timecontrol.timecontrol >/dev/null 2>&1; then
+	uci rename timecontrol.@timecontrol[0]=timecontrol
+	uci commit timecontrol
+fi
+exit 0
+TCPATCH
+    chmod +x "$TC_DIR/root/etc/uci-defaults/95-timecontrol-section"
+    echo "✅ 已拷贝: luci-app-timecontrol（ACL + 命名配置节已修）"
+  else
+    echo "::error::luci-app-timecontrol 拉取失败，timecontrol 会被 defconfig 剔除"
+    exit 1
+  fi
+  rm -rf "$TC_TMP"
+fi
+
+# --- rtp2httpd：用本人仓库源码替换 feeds 官方版 ---
+# 同名 Package 在索引里出现两次时，实际编进去哪份取决于扫描顺序，
+# 所以先删掉 feeds 官方 3.16.0，再放自己那份（packages/rtp2httpd 随仓库提交）。
+if [ "$ADD_RTP2HTTPD_FORK" = "true" ]; then
+  WS_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
+  if [ -f "$WS_DIR/packages/rtp2httpd/Makefile" ]; then
+    rm -rf feeds/packages/net/rtp2httpd package/feeds/packages/net/rtp2httpd 2>/dev/null
+    rm -rf "$PKG_DIR/rtp2httpd"
+    cp -a "$WS_DIR/packages/rtp2httpd" "$PKG_DIR/rtp2httpd"
+    echo "✅ 已替换 rtp2httpd：mayipashu/rtp2httpd @ d7cc99a（v3.17.2，官方 init/LuCI 不变）"
+  else
+    echo "::warning::未找到 $WS_DIR/packages/rtp2httpd，rtp2httpd 仍用 feeds 官方源码"
+  fi
 fi
 # ---------------------------------------------------------
 # 校验：默认开启的三个插件必须拉到，否则 defconfig 会静默剔除，
@@ -585,16 +732,19 @@ if [ -n "$(ls -A "$PKG_DIR" 2>/dev/null)" ]; then
   [ "$ADD_OPENCLASH" = "true" ] && REQUIRED="$REQUIRED luci-app-openclash"
   [ "$ADD_PASSWALL"  = "true" ] && REQUIRED="$REQUIRED luci-app-passwall"
   [ "$ADD_MOSDNS"    = "true" ] && REQUIRED="$REQUIRED luci-app-mosdns"
-  [ "$ADD_LUCKY"     = "true" ] && REQUIRED="$REQUIRED luci-app-lucky"
+  [ "$ADD_LUCKY"     = "true" ] && REQUIRED="$REQUIRED lucky luci-app-lucky"
   [ "$ADD_TAILSCALE" = "true" ] && REQUIRED="$REQUIRED luci-app-tailscale"
   [ "$ADD_OPENLIST"  = "true" ] && REQUIRED="$REQUIRED luci-app-openlist2"
   [ "$ADD_SMARTDNS"  = "true" ] && REQUIRED="$REQUIRED luci-app-smartdns"
-  [ "$ADD_EASYTIER"  = "true" ] && REQUIRED="$REQUIRED luci-app-easytier"
+  [ "$ADD_EASYTIER"  = "true" ] && REQUIRED="$REQUIRED easytier luci-app-easytier"
   [ "$ADD_POWEROFF"  = "true" ] && REQUIRED="$REQUIRED luci-app-poweroffdevice"
   [ "$ADD_OWQ_WOL"   = "true" ] && REQUIRED="$REQUIRED luci-app-owq-wol"
   [ "$ADD_WATCHDOG"  = "true" ] && REQUIRED="$REQUIRED luci-app-watchdog"
   [ "$ADD_TASKPLAN"  = "true" ] && REQUIRED="$REQUIRED luci-app-taskplan"
   [ "$ADD_OAF"       = "true" ] && REQUIRED="$REQUIRED luci-app-oaf"
+  [ "$ADD_MESH"      = "true" ] && REQUIRED="$REQUIRED luci-app-mesh"
+  [ "$ADD_TIMECONTROL" = "true" ] && REQUIRED="$REQUIRED luci-app-timecontrol"
+  [ "$ADD_RTP2HTTPD_FORK" = "true" ] && REQUIRED="$REQUIRED rtp2httpd"
   true
   if [ "$ADD_FTTR" = "true" ] && [ "$FTTR_PROFILE" = "h3c_hm2004-du" ]; then
     # KernelPackage 生成的包名带 kmod- 前缀，索引里写的是 kmod-h3c-fmcs

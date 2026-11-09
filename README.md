@@ -45,7 +45,7 @@
 | AN7581 | `fiberhome_hg5382a` `fiberhome_hg5585f-ct` `fiberhome_hg5585f-cu` `gemtek_xg2010g` `nokia_xg-040g-md-ubi` `nokia_xg-040g-tf-ubi` `unionman_ung00a` `znxt_zn504xg-d` `znxt_zn515xg-d` `h3c_hm2004-du`※ |
 | AN7583 | `nokia_xg-040g-mf` `nokia_xg-040g-mf-ubi` |
 
-※ `h3c_hm2004-du` 额外依赖私有仓库 `openwrt-fttr`（FTTR 驱动 / 控制端 / FPGA 固件）与 `luci-app-fttr`，缺凭证时 `diy-part1.sh` 会直接报错退出。
+※ `h3c_hm2004-du` 额外依赖私有仓库 `LazuliKao/openwrt-fttr`（FTTR 驱动 / 控制端 / FPGA 固件）与公开的 `LazuliKao/luci-app-fttr`；私有仓库需在 Secrets 配 `PRIVATE_REPO_TOKEN`（或 GitHub App 凭证），缺凭证时 `diy-part1.sh` 会直接报错退出。
 
 ## 插件开关（`diy-part1.sh`）
 
@@ -66,6 +66,9 @@
 | `ADD_EASYTIER` | `luci-app-easytier` + `easytier` | 本体是 Rust 包，编译较慢 |
 | `ADD_POWEROFF` / `ADD_OWQ_WOL` / `ADD_WATCHDOG` / `ADD_TASKPLAN` | 同名 `luci-app-*` | |
 | `ADD_OAF` | `luci-app-oaf` + `appfilter` / `kmod-oaf` | 含内核模块 |
+| `ADD_MESH` | `luci-app-mesh` | 802.11s 组网（xxosdev）；依赖已裁成 devicefit 版（wpad-openssl 自带 mesh） |
+| `ADD_TIMECONTROL` | `luci-app-timecontrol` | 上网时间控制（kavass168）；构建期修正 ACL 与命名配置节 |
+| `ADD_RTP2HTTPD_FORK` | `rtp2httpd` | 用 `mayipashu/rtp2httpd` 源码替换 feeds 官方版（见下） |
 
 **要关掉某个插件，改两处**：脚本里 `ADD_xxx=false`，**并且**把两个通用 config 里对应的
 `CONFIG_PACKAGE_xxx=y` 删掉（或改成 `# ...is not set`）。只改一处会不一致：
@@ -77,6 +80,28 @@
 行为不可预期。所以脚本只拷 luci 前端，本体一律用 feeds 的。
 
 `ADD_FTTR` 及其子开关只在 `h3c_hm2004-du` 下生效，其余机型自动跳过。
+
+### 2026-11 定制预装（`h3c_hm2004-du`）
+
+`configs/h3c_hm2004-du.config` 第 19 节默认开启下列插件，全部**编译进固件**，刷完无需再装：
+
+| 插件 | 包 | 说明 |
+|---|---|---|
+| HomeProxy | `luci-app-homeproxy` + `sing-box` + `ucode-mod-digest` | 官方 feeds；ARM64 代理平台 |
+| Lucky | `luci-app-lucky` + `lucky` | 第三方仓库（sirpdboy），本体按架构下载 |
+| EasyTier | `luci-app-easytier` + `easytier` | 第三方仓库（EasyTier），本体按架构下载 |
+| frp 客户端 | `luci-app-frpc` + `frpc` | 官方 feeds |
+| Samba4 | `luci-app-samba4` + `samba4-server` | 官方 feeds |
+| FileBrowser | `luci-app-filebrowser` + `filebrowser` | 官方 feeds（Go 编译） |
+| tinc | `tinc` | 官方 feeds，**无 LuCI** |
+| n2n | `n2n` | 官方 feeds，**无 LuCI** |
+| Mesh | `luci-app-mesh` | `xxosdev/luci-app-mesh`，依赖裁剪为 devicefit 版 |
+| 时间控制 | `luci-app-timecontrol` | `kavass168/luci-app-timecontrol-25.12`，构建期修 ACL + 配置节 |
+| rtp2httpd | `rtp2httpd` + `luci-app-rtp2httpd` | 二进制用 `mayipashu/rtp2httpd@d7cc99a`（v3.17.2，含定制播放器 UI）编译；init/配置/LuCI 仍用官方 |
+
+rtp2httpd 的源码地址、hash 与编译方式写在 `packages/rtp2httpd/Makefile`；
+`diy-part1.sh` 会先删除 `feeds/packages/net/rtp2httpd`（官方 3.16.0），再把自己的包放进
+`package/custom/rtp2httpd`，避免同名 `Package` 重复索引。
 
 ## 构建缓存（移植自 VIKINGYFY/OpenWRT-CI）
 

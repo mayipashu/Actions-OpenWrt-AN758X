@@ -1,0 +1,44 @@
+{
+	"luci-app-timecontrol": {
+		"description": "Grant access to Internet Time Control",
+		"read": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/bin/ps": [ "exec" ],
+				"/bin/ps w": [ "exec" ],
+				"/etc/init.d/timecontrol": [ "exec" ],
+				"/etc/init.d/timecontrol *": [ "exec" ],
+				"/usr/bin/timecontrol": [ "exec" ],
+				"/usr/bin/timecontrol *": [ "exec" ],
+				"/usr/libexec/timecontrol-call": [ "exec" ],
+				"/usr/libexec/timecontrol-call *": [ "exec" ],
+				"/sbin/uci": [ "exec" ],
+				"/sbin/uci *": [ "exec" ],
+				"/etc/config/timecontrol": [ "read" ],
+				"/var/log/timecontrol.log": [ "read" ]
+			},
+			"ubus": {
+				"file": [ "exec", "list", "stat", "read" ],
+				"uci": [ "*" ],
+				"timecontrol": [ "*" ]
+			},
+			"uci": [ "timecontrol" ]
+		},
+		"write": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/etc/config/timecontrol": [ "write" ],
+				"/var/log/timecontrol.log": [ "write" ],
+				"/sbin/uci *": [ "exec" ],
+				"/usr/bin/timecontrol *": [ "exec" ],
+				"/etc/init.d/timecontrol *": [ "exec" ]
+			},
+			"ubus": {
+				"file": [ "write" ],
+				"uci": [ "*" ],
+				"timecontrol": [ "*" ]
+			},
+			"uci": [ "timecontrol" ]
+		}
+	}
+}
