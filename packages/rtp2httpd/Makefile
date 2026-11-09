@@ -29,7 +29,6 @@ PKG_HASH:=9d6e524f427813f91f4badf8d3c2b07138533c9805b1cd598d3530e0fa42daaa
 
 # codeload 的 commit 归档解压后自带 <repo>-<ref>/ 顶层目录，而默认
 # PKG_BUILD_DIR 是 rtp2httpd-3.17.2，路径对不上；这里指向实际解压目录。
-# （Build/Compile 里另有一层兜底判断，防止不同版本 buildroot 解压方式差异）
 PKG_BUILD_DIR:=$(BUILD_DIR)/rtp2httpd-$(PKG_SOURCE_REF)
 
 include $(INCLUDE_DIR)/package.mk
@@ -94,23 +93,26 @@ RTP2HTTPD_SOURCES := \
 	src/vendor/md5/md5.c \
 	src/vendor/picohttpparser/picohttpparser.c
 
+# 两个可能的源码目录（codeload 解压行为在 buildroot 版本间有差异）
+RTP2HTTPD_SRC1 := $(PKG_BUILD_DIR)
+RTP2HTTPD_SRC2 := $(PKG_BUILD_DIR)/rtp2httpd-$(PKG_SOURCE_REF)
+
 define Build/Compile
 	$(INSTALL_DIR) $(PKG_INSTALL_DIR)/usr/bin
-	SRC="$(PKG_BUILD_DIR)"; \
-	if [ ! -f "$$SRC/src/rtp2httpd.c" ] && \
-	   [ -f "$(PKG_BUILD_DIR)/rtp2httpd-$(PKG_SOURCE_REF)/src/rtp2httpd.c" ]; then \
-		SRC="$(PKG_BUILD_DIR)/rtp2httpd-$(PKG_SOURCE_REF)"; \
-	fi; \
-	test -f "$$SRC/src/rtp2httpd.c" || { \
-		echo "ERROR: rtp2httpd 源码未解压到 $(PKG_BUILD_DIR)" >&2; \
-		ls -la "$(PKG_BUILD_DIR)" >&2 2>/dev/null || true; \
+	@if [ -f "$(RTP2HTTPD_SRC1)/src/rtp2httpd.c" ]; then \
+		SRC="$(RTP2HTTPD_SRC1)"; \
+	elif [ -f "$(RTP2HTTPD_SRC2)/src/rtp2httpd.c" ]; then \
+		SRC="$(RTP2HTTPD_SRC2)"; \
+	else \
+		echo "ERROR: rtp2httpd 源码未解压到 $(RTP2HTTPD_SRC1) 或 $(RTP2HTTPD_SRC2)" >&2; \
+		ls -la "$(RTP2HTTPD_SRC1)" >&2 2>/dev/null || true; \
 		exit 1; \
-	}; \
+	fi; \
 	cd "$$SRC" && $(TARGET_CC) $(TARGET_CFLAGS) -std=c11 -D_GNU_SOURCE \
 		-DSYSCONFDIR='"/etc"' -DPACKAGE='"rtp2httpd"' -DVERSION='"$(PKG_VERSION)"' \
 		-O3 -fstack-protector-strong \
 		-I src -o $(PKG_INSTALL_DIR)/usr/bin/rtp2httpd \
-		$$(for f in $(RTP2HTTPD_SOURCES); do echo "$$SRC/$$f"; done) \
+		$(foreach f,$(RTP2HTTPD_SOURCES),$$SRC/$(f)) \
 		-lpthread -lm
 endef
 
