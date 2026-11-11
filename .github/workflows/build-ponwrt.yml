@@ -28,7 +28,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   REPO_BRANCH: ${{ github.event.inputs.branch || 'master' }}
   SOC: ${{ github.event.inputs.soc || 'an7581' }}
-  PROFILE: ${{ github.event.inputs.profile || 'fiberhome_hg5585f-ct' }}
+  PROFILE: ${{ github.event.inputs.profile || 'h3c_hm2004-du' }}
   BUILD_SCOPE: ${{ github.event.inputs.scope || 'firmware' }}
   IGNORE_CACHE: ${{ github.event.inputs.ignore_cache || 'false' }}
   FW_BUILD_TIME: ''                 # 留空 = 自动取构建时时间（Asia/Shanghai）
