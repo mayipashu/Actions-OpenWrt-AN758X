@@ -451,13 +451,19 @@ fi
 # 整包拷进 package/custom/luci-app-mesh 即可。
 #
 # ⚠ 上游 LUCI_DEPENDS 带 +wpad-mesh-openssl +kmod-batman-adv +batctl
-#   +luci-proto-batman-adv +dawn +umdns。本机型（HM2004-DU）这样处理：
-#   ① wpad-openssl 是 full 变体，hostapd 的 full 本就 CONFIG_MESH=y，
-#      再拉 wpad-mesh-openssl 会与已有 wpad-openssl 争同一组文件；
-#   ② batman-adv / dawn / umdns 属于"可选增强"，802.11s 本身不需要，
-#      却会把 batman 内核模块等一起拖进固件、增加编译失败面。
-#   于是把依赖裁成与实机验证过的 luci-app-mesh_1.0.0-r58_all-devicefit.ipk
-#   完全一致的 8 项。
+#   +luci-proto-batman-adv +dawn +umdns。
+#
+#   2026-11 修正：此前把 batman-adv / dawn / umdns 当"可选增强"裁掉了，
+#   实机反馈**组网能力不满足**：
+#     · 缺 kmod-batman-adv + batctl → 没有多跳路由，节点只能一跳直连；
+#     · 缺 dawn → 没有 802.11k/v 漫游引导，客户端粘在原 AP 不切换；
+#     · 缺 umdns → DAWN 无法跨 AP 交换邻居/负载信息，等于 dawn 装了个空壳。
+#   现恢复为强依赖（与上游一致，仅 wpad-mesh-openssl 除外，见下）。
+#
+#   唯一保留的裁剪：wpad-mesh-openssl。
+#     wpad-openssl 是 full 变体，hostapd 编 full 时本就 CONFIG_MESH=y，
+#     再拉 wpad-mesh-openssl 会与已有 wpad-openssl 争同一组文件。
+#     → LUCI_DEPENDS 里保留 +wpad-openssl，不加 +wpad-mesh-openssl。
 if [ "$ADD_MESH" = "true" ]; then
   MESH_TMP="$(mktemp -d)/mesh"
   if clone https://github.com/xxosdev/luci-app-mesh "$MESH_TMP" main \
@@ -467,15 +473,17 @@ if [ "$ADD_MESH" = "true" ]; then
     rm -rf "$PKG_DIR/luci-app-mesh/.git"
     awk '
       /^LUCI_DEPENDS:=/ {
-        print "LUCI_DEPENDS:=+uclient-fetch +rpcd +curl +jsonfilter +iwinfo +iw +wpad-openssl"
+        print "LUCI_DEPENDS:=+uclient-fetch +rpcd +curl +jsonfilter +iwinfo +iw +wpad-openssl \\"
+        print "\t+kmod-batman-adv +batctl +luci-proto-batman-adv \\"
+        print "\t+dawn +umdns"
         skip=1; next
       }
       skip && /^[[:space:]]+\+/ { next }
       { skip=0; print }
     ' "$PKG_DIR/luci-app-mesh/Makefile" > "$PKG_DIR/luci-app-mesh/Makefile.tmp" && \
       mv "$PKG_DIR/luci-app-mesh/Makefile.tmp" "$PKG_DIR/luci-app-mesh/Makefile"
-    echo "✅ 已拷贝: luci-app-mesh（依赖已裁剪为 devicefit 版）"
-    grep -m1 '^LUCI_DEPENDS' "$PKG_DIR/luci-app-mesh/Makefile" || true
+    echo "✅ 已拷贝: luci-app-mesh（依赖恢复为上游完整版，仅去掉 wpad-mesh-openssl）"
+    grep -m1 '^LUCI_DEPENDS' -A2 "$PKG_DIR/luci-app-mesh/Makefile" || true
   else
     echo "::error::luci-app-mesh 拉取失败，mesh 会被 defconfig 剔除"
     exit 1

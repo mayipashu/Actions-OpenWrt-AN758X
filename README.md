@@ -47,7 +47,7 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 | Watchcat | `luci-app-watchcat` (+ zh-cn) + `watchcat` | 官方 feeds；定时重启/断网自动重启 + 配置界面 |
 | tinc | `tinc` | 官方 feeds，**无 LuCI**，命令行使用 |
 | n2n | `n2n` | 官方 feeds，**无 LuCI**，命令行使用 |
-| Mesh 组网 | `luci-app-mesh` | [xxosdev/luci-app-mesh](https://github.com/xxosdev/luci-app-mesh)；依赖已裁成 devicefit 版（wpad-openssl 自带 mesh，不装 batman-adv/dawn） |
+| Mesh 组网 | `luci-app-mesh` + `kmod-batman-adv` `batctl-default` `luci-proto-batman-adv` `dawn` `luci-app-dawn` `umdns` | [xxosdev/luci-app-mesh](https://github.com/xxosdev/luci-app-mesh)；依赖=上游完整版（仅去掉 wpad-mesh-openssl，wpad-openssl 自带 mesh）。**batman-adv 提供多跳路由、dawn 提供 802.11k/v 漫游引导、umdns 是 DAWN 的跨 AP 邻居发现** |
 | 时间控制 | `luci-app-timecontrol` | [kavass168/luci-app-timecontrol-25.12](https://github.com/kavass168/luci-app-timecontrol-25.12)；构建期修正上游 ACL 与命名配置节问题 |
 | rtp2httpd | `rtp2httpd` + `luci-app-rtp2httpd` | 二进制用 [mayipashu/rtp2httpd](https://github.com/mayipashu/rtp2httpd)@`d7cc99a`（v3.17.2，含定制 IPTV 播放器 UI）编译；init/配置/LuCI 沿用官方 |
 
@@ -101,7 +101,7 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 
 | 开关 | 包 | 说明 |
 |---|---|---|
-| `ADD_MESH` | `luci-app-mesh` | 克隆 xxosdev 仓库，依赖裁剪为 devicefit 版 |
+| `ADD_MESH` | `luci-app-mesh` | 克隆 xxosdev 仓库，依赖恢复为上游完整版（仅去 wpad-mesh-openssl） |
 | `ADD_TIMECONTROL` | `luci-app-timecontrol` | 克隆 kavass168 仓库，构建期替换 ACL（`patches/luci-app-timecontrol/acl.json`）并修命名配置节 |
 | `ADD_RTP2HTTPD_FORK` | `rtp2httpd` | 删除 feeds 官方 3.16.0，改用 `packages/rtp2httpd/`（本人仓库源码） |
 | `ADD_LUCKY` / `ADD_EASYTIER` | lucky + luci-app-lucky / easytier + luci-app-easytier | 本体和界面两个包都拷（上游只拷了界面包，本体会缺依赖） |
@@ -145,7 +145,7 @@ key = `ponwrt-<源站>-<分支>-<SoC>-<prebuilt|source>-<上游提交号>`，恢
 ## 与上游的差异（本 fork）
 
 1. **只编译 `h3c_hm2004-du`**，workflow 默认值已固定为该机型
-2. **预装插件**（HomeProxy / Lucky / EasyTier / frpc / Samba4 / FileBrowser-go / openssh-sftp-server / Syncthing / Watchcat / tinc / n2n / Mesh / 时间控制 / 定制 rtp2httpd）
+2. **预装插件**（HomeProxy / Lucky / EasyTier / frpc / Samba4 / FileBrowser-go / openssh-sftp-server / Syncthing / Watchcat / tinc / n2n / Mesh+batman-adv+dawn+umdns / 时间控制 / 定制 rtp2httpd）
 3. **FTTR 私有仓库默认值**改为 `LazuliKao/openwrt-fttr`
 4. **lucky / easytier** 本体包也编进固件（上游只拉界面包，本体依赖会落空）
 5. `Validate configuration` 新增「定制预装插件」硬校验，缺任何一个直接失败，不会静默编出缺功能的固件

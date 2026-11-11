@@ -911,9 +911,14 @@ jobs:
           # 定制预装插件校验（缺失即失败）
           #   2026-11 定制：homeproxy / lucky / easytier / tinc / frpc /
           #   n2n / samba4 / FileBrowser-go / syncthing / watchcat /
-          #   openssh-sftp-server / mesh / timecontrol / rtp2httpd。
+          #   openssh-sftp-server / mesh（含 batman-adv/dawn/umdns）/
+          #   timecontrol / rtp2httpd。
           #   defconfig 会把 feeds 里不存在的包静默剔除，任何一个缺了，
           #   刷完固件才会发现菜单没了 —— 这里直接失败。
+          #
+          #   ⚠ batctl 是 PROVIDES 虚拟包（batctl-tiny/default/full 提供），
+          #     .config 里不会出现 CONFIG_PACKAGE_batctl=y，写进去必然误报。
+          #     这里校验具体变体 batctl-default。
           # =========================================================
           USER_MISS=""
           for p in \
@@ -926,7 +931,10 @@ jobs:
             openssh-sftp-server \
             syncthing luci-app-syncthing luci-i18n-syncthing-zh-cn \
             watchcat luci-app-watchcat luci-i18n-watchcat-zh-cn \
-            luci-app-mesh luci-app-timecontrol \
+            luci-app-mesh \
+            kmod-batman-adv batctl-default luci-proto-batman-adv \
+            dawn luci-app-dawn umdns \
+            luci-app-timecontrol \
             rtp2httpd luci-app-rtp2httpd ; do
             grep -qx "CONFIG_PACKAGE_${p}=y" .config || USER_MISS="$USER_MISS $p"
           done
@@ -935,9 +943,10 @@ jobs:
             echo "  1) 确认 configs/${PROFILE}.config 里是 =y 且行首无 #"
             echo "  2) feeds 里是否有该包（lucky/easytier 由 diy-part1.sh 从第三方仓库拉取）"
             echo "  3) rtp2httpd 是否被 feeds 同名包覆盖（diy-part1.sh 会先删 feeds 官方版）"
+            echo "  4) batman-adv / dawn 是否因内核依赖被剔除（看上面 kmod 报错）"
             exit 1
           fi
-          echo "✅ 定制预装插件校验通过（homeproxy/lucky/easytier/tinc/frpc/n2n/samba4/FileBrowser-go/openssh-sftp-server/syncthing/watchcat/mesh/timecontrol/rtp2httpd）"
+          echo "✅ 定制预装插件校验通过（homeproxy/lucky/easytier/tinc/frpc/n2n/samba4/FileBrowser-go/openssh-sftp-server/syncthing/watchcat/mesh+batman-adv+dawn+umdns/timecontrol/rtp2httpd）"
 
           # 中文包（po 注入后才存在，缺失只警告不阻断）
           if ! grep -q "^CONFIG_PACKAGE_luci-i18n-airoha-npu-zh-cn=y" .config; then
