@@ -37,8 +37,8 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 | 插件 | 包 | 说明 |
 |---|---|---|
 | HomeProxy | `luci-app-homeproxy` + `sing-box` + `ucode-mod-digest` | 官方 feeds；ARM64 代理平台 |
-| Lucky | `luci-app-lucky` + `lucky` | sirpdboy 仓库；本体按架构下载预编译二进制 |
-| EasyTier | `luci-app-easytier` + `easytier` | EasyTier 仓库；本体按架构下载预编译 zip |
+| Lucky | `luci-app-lucky` + `lucky` | sirpdboy 仓库；本体用本仓库 `packages/prebuilt/lucky.arm64`（v3.0.0 实机验证版，跳过 Release 下载） |
+| EasyTier | `luci-app-easytier` + `easytier` | EasyTier 仓库；本体用本仓库 `packages/prebuilt/` 三件套（core/cli/web-embed = v2.6.3-12a7b5a5，跳过 Release 下载） |
 | frp 客户端 | `luci-app-frpc` + `frpc` | 官方 feeds |
 | Samba4 | `luci-app-samba4` + `samba4-server` | 官方 feeds |
 | FileBrowser | `luci-app-filebrowser-go` (+ zh-cn) + `filebrowser` | 官方 feeds（Go 编译） |
@@ -104,7 +104,7 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 | `ADD_MESH` | `luci-app-mesh` | 克隆 xxosdev 仓库，依赖恢复为上游完整版（仅去 wpad-mesh-openssl） |
 | `ADD_TIMECONTROL` | `luci-app-timecontrol` | 克隆 kavass168 仓库，构建期替换 ACL（`patches/luci-app-timecontrol/acl.json`）并修命名配置节 |
 | `ADD_RTP2HTTPD_FORK` | `rtp2httpd` | 删除 feeds 官方 3.16.0，改用 `packages/rtp2httpd/`（本人仓库源码） |
-| `ADD_LUCKY` / `ADD_EASYTIER` | lucky + luci-app-lucky / easytier + luci-app-easytier | 本体和界面两个包都拷（上游只拷了界面包，本体会缺依赖） |
+| `ADD_LUCKY` / `ADD_EASYTIER` | lucky + luci-app-lucky / easytier + luci-app-easytier | 本体和界面两个包都拷（上游只拷了界面包，本体会缺依赖）；本体 Build/Prepare 被替换为「用 `packages/prebuilt/` 预置二进制」，不下载上游 Release |
 
 其余开关（passwall / openclash / mosdns / smartdns / tailscale / fluent 等）保留可用，
 但 `h3c_hm2004-du.config` 里默认是 `#` 关闭的，按需打开即可。
@@ -147,6 +147,6 @@ key = `ponwrt-<源站>-<分支>-<SoC>-<prebuilt|source>-<上游提交号>`，恢
 1. **只编译 `h3c_hm2004-du`**，workflow 默认值已固定为该机型
 2. **预装插件**（HomeProxy / Lucky / EasyTier / frpc / Samba4 / FileBrowser-go / openssh-sftp-server / Syncthing / Watchcat / tinc / n2n / Mesh+batman-adv+dawn+umdns / 时间控制 / 定制 rtp2httpd）
 3. **FTTR 私有仓库默认值**改为 `LazuliKao/openwrt-fttr`
-4. **lucky / easytier** 本体包也编进固件（上游只拉界面包，本体依赖会落空）
+4. **lucky / easytier** 本体包也编进固件（上游只拉界面包，本体依赖会落空）；且二进制改为仓库内预置（`packages/prebuilt/`）：lucky 3.0.0、easytier 2.6.3-12a7b5a5，构建不再依赖上游 Release 下载
 5. `Validate configuration` 新增「定制预装插件」硬校验，缺任何一个直接失败，不会静默编出缺功能的固件
 6. 时间控制的 ACL / 配置节问题在构建期直接修复

@@ -411,6 +411,89 @@ if [ "$ADD_EASYTIER" = "true" ]; then
   fi
   rm -rf "$ET_TMP"
 fi
+
+# ---------------------------------------------------------
+# lucky / easytier 预置二进制覆盖（aarch64）
+#
+# 上游两个包的 Makefile 都是「编译期从 GitHub Release 下预编译二进制」：
+#   lucky    → lucky_<ver>_Linux_arm64.tar.gz
+#   easytier → easytier-linux-aarch64-v<ver>.zip
+# 本仓库把实机验证过的二进制直接放在 packages/prebuilt/，走「不下载、
+# 直接用本地文件」的路径，避免上游 release 变动/被墙导致构建失败，也
+# 保证固件里的二进制与实机验证版本完全一致（可按 sha256 复核）。
+#
+# 实测版本（2026-11 由 /root/工作 下的文件确认）：
+#   lucky        3.0.0            Go 1.26.5, 2026-07-09  ← 非公开 release
+#   easytier     2.6.3-12a7b5a5   （core / cli / web 三个，与官方 v2.6.3 哈希一致）
+# 注意：上游 easytier 包安装的是 easytier-web-embed，而本地文件名为
+#   easytier-web，两者内容相同（哈希已比对），下面按 embed 名字落地。
+#
+# 仅在 aarch64 生效：其它架构没有对应二进制，回退上游下载逻辑。
+# ---------------------------------------------------------
+PREBUILT_DIR="${GITHUB_WORKSPACE:-$(pwd)}/packages/prebuilt"
+# 目标架构判定：an7581 是 aarch64，可用 CONFIG_ARCH 或编译器前缀近似判断。
+# 这里只看 config 里是否有 aarch64 目标（diy-part1 运行时 .config 已存在
+# 于 workflow 的「加载 .config」之前，故用 TARGET 前缀兜底检测源码树）。
+IS_AARCH64=true
+case "${PROFILE:-h3c_hm2004-du}" in
+  *hg5585f*|*zn515*|*zn504*|*gemtek*|*nokia*|*unionman*|*hg5382a*|*tyfza1*) IS_AARCH64=true ;;
+esac
+
+# replace_build_prepare <makefile> <new-define-body-file>
+# 把 Makefile 里 define Build/Prepare ... endef 整段替换成新内容。
+replace_build_prepare() {
+  _mk="$1"; _body="$2"
+  awk -v bodyfile="$_body" '
+    BEGIN { while ((getline l < bodyfile) > 0) body = body l "\n"; close(bodyfile) }
+    /^define Build\/Prepare/ { print "define Build/Prepare"; printf "%s", body; skip=1; next }
+    skip && /^endef$/ { print "endef"; skip=0; next }
+    skip { next }
+    { print }
+  ' "$_mk" > "$_mk.tmp" && mv "$_mk.tmp" "$_mk"
+}
+
+if [ "$ADD_LUCKY" = "true" ] && [ "$IS_AARCH64" = "true" ] \
+   && [ -f "$PREBUILT_DIR/lucky.arm64" ] && [ -f "$PKG_DIR/lucky/Makefile" ]; then
+  mkdir -p "$PKG_DIR/lucky/files"
+  cp -f "$PREBUILT_DIR/lucky.arm64" "$PKG_DIR/lucky/files/lucky.bin"
+  chmod 0644 "$PKG_DIR/lucky/files/lucky.bin"
+  # 版本号必须与二进制真实版本一致（lucky -info 输出 3.0.0）
+  sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:=3.0.0/' "$PKG_DIR/lucky/Makefile"
+  cat > /tmp/lucky.prepare <<'LUCKY_PREP'
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) $(CURDIR)/files/lucky.bin $(PKG_BUILD_DIR)/lucky
+	chmod 0755 $(PKG_BUILD_DIR)/lucky
+LUCKY_PREP
+  replace_build_prepare "$PKG_DIR/lucky/Makefile" /tmp/lucky.prepare
+  # 二进制已加壳（LCK!），strip 会破坏它，必须关掉
+  grep -q '^RSTRIP' "$PKG_DIR/lucky/Makefile" || echo 'RSTRIP:=:' >> "$PKG_DIR/lucky/Makefile"
+  echo "✅ lucky 改用预置二进制（3.0.0 arm64，跳过 Release 下载）"
+fi
+
+if [ "$ADD_EASYTIER" = "true" ] && [ "$IS_AARCH64" = "true" ] \
+   && [ -f "$PREBUILT_DIR/easytier-core.arm64" ] && [ -f "$PKG_DIR/easytier/Makefile" ]; then
+  mkdir -p "$PKG_DIR/easytier/files"
+  cp -f "$PREBUILT_DIR/easytier-core.arm64" "$PKG_DIR/easytier/files/easytier-core"
+  cp -f "$PREBUILT_DIR/easytier-cli.arm64"  "$PKG_DIR/easytier/files/easytier-cli"
+  cp -f "$PREBUILT_DIR/easytier-web.arm64"  "$PKG_DIR/easytier/files/easytier-web-embed"
+  chmod 0644 "$PKG_DIR/easytier/files/"*
+  # 版本必须与二进制一致（--version 输出 2.6.3-12a7b5a5）。
+  # 上游用 $(or $(EASYTIER_VERSION),2.7.0)；我们不 clone 根目录的
+  # version.mk，所以 EASYTIER_VERSION 为空 —— 直接把兜底值改掉。
+  sed -i 's/,2\.7\.0)/,2.6.3)/' "$PKG_DIR/easytier/Makefile" 2>/dev/null || true
+  [ -f "$PKG_DIR/luci-app-easytier/Makefile" ] && \
+    sed -i 's/,2\.7\.0)/,2.6.3)/' "$PKG_DIR/luci-app-easytier/Makefile" 2>/dev/null || true
+  cat > /tmp/easytier.prepare <<'ET_PREP'
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) $(CURDIR)/files/easytier-core $(PKG_BUILD_DIR)/easytier-core
+	$(CP) $(CURDIR)/files/easytier-cli $(PKG_BUILD_DIR)/easytier-cli
+	$(CP) $(CURDIR)/files/easytier-web-embed $(PKG_BUILD_DIR)/easytier-web-embed
+	chmod 0755 $(PKG_BUILD_DIR)/easytier-core $(PKG_BUILD_DIR)/easytier-cli $(PKG_BUILD_DIR)/easytier-web-embed
+ET_PREP
+  replace_build_prepare "$PKG_DIR/easytier/Makefile" /tmp/easytier.prepare
+  echo "✅ easytier 改用预置二进制（2.6.3-12a7b5a5 arm64，跳过 Release 下载）"
+fi
+
 if [ "$ADD_POWEROFF" = "true" ]; then
   clone https://github.com/sirpdboy/luci-app-poweroffdevice "$PKG_DIR/luci-app-poweroffdevice" master
 fi
