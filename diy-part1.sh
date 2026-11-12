@@ -52,7 +52,7 @@ ADD_LUCI_APP=true       # qwe-qaq/luci-app 仓库（monorepo）
 ADD_MESH=true           # luci-app-mesh（xxosdev）：802.11s 组网管理
                         #   依赖按实机验证过的 devicefit 版裁剪：wpad-openssl(full)
                         #   本身已带 mesh，不再强依赖 batman-adv / dawn / umdns
-ADD_TIMECONTROL=true    # luci-app-timecontrol（kavass168，apk 版）：上网时间控制
+ADD_TIMECONTROL=true    # luci-app-timecontrol（mayipashu fork，已修 ACL+配置节）：上网时间控制
                         #   构建期顺带修好上游 ACL 与匿名配置节问题
 ADD_RTP2HTTPD_FORK=true # rtp2httpd：用本人仓库 mayipashu/rtp2httpd 源码编译，
                         #   替换 feeds 官方 3.16.0（详见 packages/rtp2httpd/）
@@ -588,48 +588,26 @@ if [ "$ADD_MESH" = "true" ]; then
   fi
 fi
 
-# --- timecontrol（kavass168/luci-app-timecontrol-25.12）---
+# --- timecontrol（mayipashu/luci-app-timecontrol）---
 # 包在仓库的 luci-app-timecontrol/ 子目录；前端通过 cgi-io/ubus exec 调脚本。
-# 上游两个已知问题在构建期直接修掉（等价于装机后跑 luci-app-timecontrol-postfix.sh）：
+#
+# ⚠ 2026-11-12：已 fork + 修复并开源到 mayipashu/luci-app-timecontrol，
+#   永久内置下列三处修正，构建期不再打补丁（上游 kavass168 仓库随时可能
+#   像 xxosdev/luci-app-mesh 那样消失）：
 #   ① ACL 里 "ubus":{"file":["exec"]} 是无效写法 → 前端 fs.exec_direct 全被拒，
-#      界面按钮（保存/重启/查流量/清日志）点了没反应；
+#      界面按钮（保存/重启/查流量/清日志）点了没反应；修正版把可执行命令按
+#      绝对路径+通配显式列入 file，并补 cgi-io:exec。
 #   ② /etc/config/timecontrol 全局节是匿名的：后端读 @timecontrol[0]，
-#      前端读写 timecontrol.timecontrol，两边不是同一节 → 模式/强度不生效。
+#      前端读写 timecontrol.timecontrol，两边不是同一节 → 模式/强度不生效；
+#      修正版全局节显式命名 'timecontrol'。
+#   ③ 新增 95-timecontrol-section uci-defaults，老配置的匿名节自动改名。
 if [ "$ADD_TIMECONTROL" = "true" ]; then
   TC_TMP="$(mktemp -d)/timecontrol"
-  if clone https://github.com/kavass168/luci-app-timecontrol-25.12 "$TC_TMP" main \
+  if clone https://github.com/mayipashu/luci-app-timecontrol "$TC_TMP" main \
      && [ -f "$TC_TMP/luci-app-timecontrol/Makefile" ]; then
     rm -rf "$PKG_DIR/luci-app-timecontrol"
     cp -a "$TC_TMP/luci-app-timecontrol" "$PKG_DIR/luci-app-timecontrol"
-    TC_DIR="$PKG_DIR/luci-app-timecontrol"
-    WS_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
-    # ① ACL 换成修正版（源文件随本仓库提交：patches/luci-app-timecontrol/acl.json）
-    if [ -f "$WS_DIR/patches/luci-app-timecontrol/acl.json" ]; then
-      cp -f "$WS_DIR/patches/luci-app-timecontrol/acl.json" \
-        "$TC_DIR/root/usr/share/rpcd/acl.d/luci-app-timecontrol.json"
-      echo "✅ timecontrol: ACL 已替换为修正版"
-    else
-      echo "::warning::未找到 patches/luci-app-timecontrol/acl.json，ACL 仍是上游无效版本"
-    fi
-    # ② 默认配置的全局节改成命名节
-    TC_CFG="$TC_DIR/root/etc/config/timecontrol"
-    if [ -f "$TC_CFG" ]; then
-      sed -i "s/^config timecontrol[[:space:]]*\$/config timecontrol 'timecontrol'/" "$TC_CFG"
-    fi
-    # ③ 老配置兜底：匿名节自动改名（uci-defaults 按文件名顺序执行）
-    cat > "$TC_DIR/root/etc/uci-defaults/95-timecontrol-section" <<'TCPATCH'
-#!/bin/sh
-# 上游全局节是匿名的；后端读 @timecontrol[0]，前端读写 timecontrol.timecontrol。
-# 已存在匿名节时改名为命名节，两边才指向同一节。
-if uci -q get timecontrol.@timecontrol[0] >/dev/null 2>&1 && \
-   ! uci -q get timecontrol.timecontrol >/dev/null 2>&1; then
-	uci rename timecontrol.@timecontrol[0]=timecontrol
-	uci commit timecontrol
-fi
-exit 0
-TCPATCH
-    chmod +x "$TC_DIR/root/etc/uci-defaults/95-timecontrol-section"
-    echo "✅ 已拷贝: luci-app-timecontrol（ACL + 命名配置节已修）"
+    echo "✅ 已拷贝: luci-app-timecontrol（mayipashu/luci-app-timecontrol，ACL + 命名配置节已修）"
   else
     echo "::error::luci-app-timecontrol 拉取失败，timecontrol 会被 defconfig 剔除"
     exit 1

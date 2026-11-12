@@ -48,7 +48,7 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 | tinc | `tinc` | 官方 feeds，**无 LuCI**，命令行使用 |
 | n2n | `n2n` | 官方 feeds，**无 LuCI**，命令行使用 |
 | Mesh 组网 | `luci-app-mesh` + `kmod-batman-adv` `batctl-default` `luci-proto-batman-adv` `dawn` `luci-app-dawn` `umdns` | [xxosdev/luci-app-mesh](https://github.com/xxosdev/luci-app-mesh)；依赖=上游完整版（仅去掉 wpad-mesh-openssl，wpad-openssl 自带 mesh）。**batman-adv 提供多跳路由、dawn 提供 802.11k/v 漫游引导、umdns 是 DAWN 的跨 AP 邻居发现** |
-| 时间控制 | `luci-app-timecontrol` | [kavass168/luci-app-timecontrol-25.12](https://github.com/kavass168/luci-app-timecontrol-25.12)；构建期修正上游 ACL 与命名配置节问题 |
+| 时间控制 | `luci-app-timecontrol` | [mayipashu/luci-app-timecontrol](https://github.com/mayipashu/luci-app-timecontrol)；fork 自 kavass168，**已修上游 ACL 与匿名配置节两个界面失效 bug**（永久内置，不再构建期打补丁） |
 | rtp2httpd | `rtp2httpd` + `luci-app-rtp2httpd` | 二进制用 [mayipashu/rtp2httpd](https://github.com/mayipashu/rtp2httpd)@`d7cc99a`（v3.17.2，含定制 IPTV 播放器 UI）编译；init/配置/LuCI 沿用官方 |
 
 ### 其他（官方原有）
@@ -102,7 +102,7 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 | 开关 | 包 | 说明 |
 |---|---|---|
 | `ADD_MESH` | `luci-app-mesh` | 克隆 xxosdev 仓库，依赖恢复为上游完整版（仅去 wpad-mesh-openssl） |
-| `ADD_TIMECONTROL` | `luci-app-timecontrol` | 克隆 kavass168 仓库，构建期替换 ACL（`patches/luci-app-timecontrol/acl.json`）并修命名配置节 |
+| `ADD_TIMECONTROL` | `luci-app-timecontrol` | 克隆 [mayipashu/luci-app-timecontrol](https://github.com/mayipashu/luci-app-timecontrol)（fork 自 kavass168，已内置 ACL + 命名配置节修正） |
 | `ADD_RTP2HTTPD_FORK` | `rtp2httpd` | 删除 feeds 官方 3.16.0，改用 `packages/rtp2httpd/`（本人仓库源码） |
 | `ADD_LUCKY` / `ADD_EASYTIER` | lucky + luci-app-lucky / easytier + luci-app-easytier | 本体和界面两个包都拷（上游只拷了界面包，本体会缺依赖）；本体 Build/Prepare 被替换为「用 `packages/prebuilt/` 预置二进制」，不下载上游 Release |
 
