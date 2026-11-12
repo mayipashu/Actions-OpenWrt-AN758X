@@ -533,6 +533,12 @@ fi
 # 802.11s 组网管理。仓库根目录就是完整 LuCI 包（Makefile + htdocs + root），
 # 整包拷进 package/custom/luci-app-mesh 即可。
 #
+# ⚠ 2026-11-12：上游 https://github.com/xxosdev/luci-app-mesh 已 404
+#   （仓库被删/转私有），Run #7 因 clone 失败整轮挂掉。已把实机验证过的
+#   luci-app-mesh 1.0.0-r58 固化为仓库内源码包 packages/luci-app-mesh/
+#   （root/ 来自 devicefit ipk 的 data.tar.gz，Makefile 依赖为完整组网版），
+#   与 rtp2httpd 同款「仓库内源码」策略。这里优先用仓库内源码，不再 clone。
+#
 # ⚠ 上游 LUCI_DEPENDS 带 +wpad-mesh-openssl +kmod-batman-adv +batctl
 #   +luci-proto-batman-adv +dawn +umdns。
 #
@@ -548,30 +554,38 @@ fi
 #     再拉 wpad-mesh-openssl 会与已有 wpad-openssl 争同一组文件。
 #     → LUCI_DEPENDS 里保留 +wpad-openssl，不加 +wpad-mesh-openssl。
 if [ "$ADD_MESH" = "true" ]; then
-  MESH_TMP="$(mktemp -d)/mesh"
-  if clone https://github.com/xxosdev/luci-app-mesh "$MESH_TMP" main \
-     && [ -f "$MESH_TMP/Makefile" ]; then
+  WS_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
+  if [ -f "$WS_DIR/packages/luci-app-mesh/Makefile" ]; then
     rm -rf "$PKG_DIR/luci-app-mesh"
-    cp -a "$MESH_TMP" "$PKG_DIR/luci-app-mesh"
-    rm -rf "$PKG_DIR/luci-app-mesh/.git"
-    awk '
-      /^LUCI_DEPENDS:=/ {
-        print "LUCI_DEPENDS:=+uclient-fetch +rpcd +curl +jsonfilter +iwinfo +iw +wpad-openssl \\"
-        print "\t+kmod-batman-adv +batctl +luci-proto-batman-adv \\"
-        print "\t+dawn +umdns"
-        skip=1; next
-      }
-      skip && /^[[:space:]]+\+/ { next }
-      { skip=0; print }
-    ' "$PKG_DIR/luci-app-mesh/Makefile" > "$PKG_DIR/luci-app-mesh/Makefile.tmp" && \
-      mv "$PKG_DIR/luci-app-mesh/Makefile.tmp" "$PKG_DIR/luci-app-mesh/Makefile"
-    echo "✅ 已拷贝: luci-app-mesh（依赖恢复为上游完整版，仅去掉 wpad-mesh-openssl）"
+    cp -a "$WS_DIR/packages/luci-app-mesh" "$PKG_DIR/luci-app-mesh"
+    echo "✅ 已拷贝: luci-app-mesh（仓库内固化源码 1.0.0-r58，依赖=完整组网版）"
     grep -m1 '^LUCI_DEPENDS' -A2 "$PKG_DIR/luci-app-mesh/Makefile" || true
   else
-    echo "::error::luci-app-mesh 拉取失败，mesh 会被 defconfig 剔除"
-    exit 1
+    # 兜底：仓库内没有时退回 clone 上游（仅历史分支会走到这里）
+    MESH_TMP="$(mktemp -d)/mesh"
+    if clone https://github.com/xxosdev/luci-app-mesh "$MESH_TMP" main \
+       && [ -f "$MESH_TMP/Makefile" ]; then
+      rm -rf "$PKG_DIR/luci-app-mesh"
+      cp -a "$MESH_TMP" "$PKG_DIR/luci-app-mesh"
+      rm -rf "$PKG_DIR/luci-app-mesh/.git"
+      awk '
+        /^LUCI_DEPENDS:=/ {
+          print "LUCI_DEPENDS:=+uclient-fetch +rpcd +curl +jsonfilter +iwinfo +iw +wpad-openssl \\"
+          print "\t+kmod-batman-adv +batctl +luci-proto-batman-adv \\"
+          print "\t+dawn +umdns"
+          skip=1; next
+        }
+        skip && /^[[:space:]]+\+/ { next }
+        { skip=0; print }
+      ' "$PKG_DIR/luci-app-mesh/Makefile" > "$PKG_DIR/luci-app-mesh/Makefile.tmp" && \
+        mv "$PKG_DIR/luci-app-mesh/Makefile.tmp" "$PKG_DIR/luci-app-mesh/Makefile"
+      echo "✅ 已拷贝: luci-app-mesh（clone 上游 + 依赖恢复完整版）"
+    else
+      echo "::error::luci-app-mesh 拉取失败，mesh 会被 defconfig 剔除"
+      exit 1
+    fi
+    rm -rf "$MESH_TMP"
   fi
-  rm -rf "$MESH_TMP"
 fi
 
 # --- timecontrol（kavass168/luci-app-timecontrol-25.12）---

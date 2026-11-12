@@ -1,0 +1,46 @@
+#!/bin/sh /etc/rc.common
+# luci-app-mesh 守护进程
+# 职责：子节点每 10 秒核对主节点配置（AP 同步 / 信道错开）；回滚窗口看护
+
+START=99
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/sbin/meshctl
+
+start_service() {
+	[ -x "$PROG" ] || return 1
+	procd_open_instance
+	procd_set_param command "$PROG" daemon
+	procd_set_param respawn 3600 5 0
+	# 不要设 pidfile：meshctl daemon 自己不写 pid 文件，设了会让 procd 走"接管已有进程"
+	# 的分支去找一个不存在的文件。procd 本来就跟踪它 fork 出来的子进程，无需 pid 文件
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+	logger -t mesh -p daemon.info "守护进程已启动(procd)"
+}
+
+stop_service() {
+	# ★ 本行在本固件上是**死代码**：busybox 未编 pkill（`command -v pkill` 失败、
+	#   `busybox pkill` 报 applet not found、直接调用 rc=127），报错又被 2>/dev/null 吞掉。
+	#   保留原因：部分固件（装了 procps 的）确有 pkill，这一行能兜底清理"旧版非 procd
+	#   方式拉起"的残留进程；本函数返回值与行为都不依赖它。
+	#   已实测**不会**引发双启动/重启竞争：本函数返回后 procd_kill 立刻删掉实例，
+	#   而 respawn.timeout=5s 才可能重启，两者相隔毫秒级 —— pkill 永远来不及插手。
+	#   （别改成 `killall meshctl`：busybox 按进程名匹配，而 comm = 脚本 basename，
+	#     会把同步子 shell 一起杀掉。）
+	pkill -f 'meshctl daemon' 2>/dev/null
+	return 0
+}
+
+# 配置变更不需要重启守护进程：它每轮都重新读 UCI(enabled / role / mesh_key)，
+# 下一轮同步就会用上新值；重启反而会让同步循环白断一次
+reload_service() {
+	logger -t mesh -p daemon.info "配置已变更，守护进程将在下一轮自行感知"
+	return 0
+}
+
+service_triggers() {
+	procd_add_reload_trigger mesh
+}

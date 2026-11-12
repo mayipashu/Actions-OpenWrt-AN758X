@@ -1,0 +1,183 @@
+/* luci-app-mesh — JS 视图共享样式（对应预览版 mesh-ui-preview.html 的绿色主题）
+ *
+ * 注意：这里几乎所有卡片/表格都用了浅色背景，所以凡是设了 background 的地方
+ * 都要把 color 一起显式设掉。否则在暗色 LuCI 主题（正文字色为浅色）下会出现
+ * 「浅底浅字」，内容直接读不出来。
+ */
+
+.mesh-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+	gap: 12px;
+}
+
+.mesh-card {
+	border: 1px solid #e3e3e3;
+	border-radius: 4px;
+	background: #fbfbfb;
+	color: #333;
+	padding: 12px 14px;
+}
+
+.mesh-card .lab { font-size: 12px; color: #777; margin-bottom: 4px; }
+.mesh-card .val { font-size: 16px; font-weight: 600; color: #333; }
+
+.mesh-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mesh-table th, .mesh-table td { border: 1px solid #e3e3e3; padding: 8px 10px; text-align: left; }
+.mesh-table td { background: #fff; color: #333; }
+.mesh-table th { background: #f4f4f4; font-weight: 600; color: #555; }
+.mesh-table-empty { color: #999; font-size: 13px; }
+
+.mesh-pill { padding: 2px 8px; border-radius: 10px; font-size: 12px; color: #fff; display: inline-block; }
+.mesh-pill.ok { background: #37c837; }
+.mesh-pill.blue { background: #4a6fa5; }
+.mesh-pill.green { background: #0f8243; }
+.mesh-pill.grey { background: #aaa; }
+
+.mesh-tag { font-family: monospace; font-size: 12px; color: #666; }
+.mesh-muted { color: #777; font-size: 12px; line-height: 1.7; }
+
+.mesh-note {
+	border: 1px solid #e0e0e0;
+	background: #f6f6f6;
+	color: #666;
+	border-radius: 4px;
+	padding: 10px 12px;
+	font-size: 12px;
+	line-height: 1.9;
+}
+.mesh-note.green { background: #eef7ee; border-color: #cfe6cf; color: #3c763d; }
+.mesh-note.red { background: #fdecea; border-color: #f5c6cb; color: #a94442; }
+/* 组网可用、但漫游组件（dawn / umdns）缺失：不阻断组网，只作提醒 */
+.mesh-note.orange { background: #fff7e6; border-color: #f0d9a8; color: #8a6d3b; }
+
+.mesh-code {
+	background: #fbfbfb;
+	color: #333;
+	border: 1px solid #e5e5e5;
+	border-radius: 4px;
+	padding: 12px;
+	font-size: 12px;
+	max-height: 420px;
+	overflow: auto;
+	white-space: pre-wrap;
+	line-height: 1.6;
+	margin: 0;
+}
+
+.mesh-btnrow { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0; }
+.mesh-btnrow .mesh-inline { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #777; }
+
+.mesh-log {
+	background: #fbfbfb;
+	color: #333;
+	border: 1px solid #e5e5e5;
+	border-radius: 4px;
+	padding: 12px;
+	font-family: monospace;
+	font-size: 12px;
+	max-height: 420px;
+	overflow: auto;
+	white-space: pre-wrap;
+	line-height: 1.6;
+	margin: 6px 0;
+}
+
+.mesh-rollback {
+	background: #fff8e1;
+	color: #333;
+	border: 1px solid #f0d98a;
+	border-left: 4px solid #f0ad4e;
+	border-radius: 4px;
+	padding: 12px 14px;
+	margin-bottom: 16px;
+}
+.mesh-rollback b { color: #a8741a; }
+
+.mesh-sigbars span {
+	display: inline-block;
+	width: 4px;
+	margin-right: 2px;
+	vertical-align: bottom;
+	background: #ddd;
+}
+
+.mesh-topo-wrap { text-align: center; }
+/* 拓扑图内部文字用固定灰度画在 SVG 上，给它一个稳定的浅色底，避免跟随暗色主题 */
+.mesh-topo-svg {
+	display: inline-block;
+	background: #fff;
+	/* border: 1px solid #e3e3e3;  不要正方形外框 */
+	border-radius: 4px;
+	padding: 10px 6px;
+}
+.mesh-topo-legend { text-align: center; margin-top: 6px; }
+.mesh-topo-legend span { display: inline-flex; align-items: center; margin-right: 16px; font-size: 12px; color: #666; }
+.mesh-topo-legend i { display: inline-block; width: 22px; height: 0; margin-right: 6px; }
+
+/* 软件版本区块（诊断与维护页）：两行 label/value，只读展示 */
+.mesh-ver-box { padding: 2px 0; }
+.mesh-ver-row {
+	display: flex;
+	align-items: baseline;
+	padding: 6px 0;
+	border-bottom: 1px dashed #e6e6e6;
+}
+.mesh-ver-row:last-child { border-bottom: none; }
+.mesh-ver-label {
+	flex: 0 0 96px;
+	color: #666;
+	font-size: 13px;
+}
+.mesh-ver-value {
+	flex: 1 1 auto;
+	font-family: monospace;
+	font-size: 13px;
+	color: #333;
+	word-break: break-all;
+}
+
+/* 退出组网区块（组网状态页「一键加入」卡片底部，r47）：
+   与主操作按钮之间用一条虚线隔开，避免"误点退出"—— 退出会还原配置、清凭证，
+   是不可逆的破坏性操作，视觉上必须与上方的加入/开放按钮拉开距离。 */
+.mesh-exit-box { margin-top: 14px; }
+.mesh-exit-sep { border-top: 1px dashed #ddd; margin-bottom: 10px; }
+
+/* 「WiFi 快速设置」页：每个频段的小标题（2.4 GHz / 5 GHz）。不设颜色，跟随主题。 */
+.mesh-band-title { margin: 14px 0 2px; font-size: 13px; }
+
+/* 「查看各节点信号」弹窗（r56 方案 A）：每行一个节点/频段，按信号强弱排序 */
+.mesh-sig-list { margin: 4px 0 2px; }
+.mesh-sig-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	padding: 7px 10px;
+	border: 1px solid #e3e3e3;
+	border-radius: 4px;
+	background: #fbfbfb;
+	color: #333;
+	margin-bottom: 6px;
+}
+.mesh-sig-where { font-size: 13px; color: #555; }
+.mesh-sig-val { font-family: monospace; font-size: 13px; color: #333; font-weight: 600; }
+/* 当前最强信号：浅绿底 + 绿字，与浅色主题一致（显式设色，暗色主题下也读得出） */
+.mesh-sig-row.mesh-sig-best { background: #eef7ee; border-color: #cfe6cf; }
+.mesh-sig-row.mesh-sig-best .mesh-sig-val { color: #2e7d32; }
+.mesh-sig-row.mesh-sig-best .mesh-sig-where { color: #3c763d; }
+
+/* ---------- 漫游引导区块（r57，WiFi 快速设置页） ---------- */
+.mesh-roam-lv { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mesh-roam-lv select { min-width: 220px; }
+.mesh-roam-chk { display: inline-flex; align-items: center; gap: 6px; }
+.mesh-roam-adv { margin-top: 10px; border-top: 1px dashed #e6e6e6; padding-top: 10px; }
+.mesh-roam-adv > summary { cursor: pointer; font-size: 13px; color: #4a6fa5; outline: none; }
+.mesh-roam-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+	gap: 8px 16px;
+	margin: 12px 0 4px;
+}
+.mesh-roam-field { display: flex; align-items: center; gap: 8px; }
+.mesh-roam-field label { flex: 0 0 auto; font-size: 13px; color: #555; white-space: nowrap; }
+.mesh-roam-field input, .mesh-roam-field select { flex: 1 1 auto; min-width: 90px; }
