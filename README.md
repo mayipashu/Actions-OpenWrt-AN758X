@@ -50,6 +50,8 @@ workflow 的 `soc` / `profile` 已固定默认值，**手动触发即可，不�
 | Mesh 组网 | `luci-app-mesh` + `kmod-batman-adv` `batctl-default` `luci-proto-batman-adv` `dawn` `luci-app-dawn` `umdns` | [xxosdev/luci-app-mesh](https://github.com/xxosdev/luci-app-mesh)；依赖=上游完整版（仅去掉 wpad-mesh-openssl，wpad-openssl 自带 mesh）。**batman-adv 提供多跳路由、dawn 提供 802.11k/v 漫游引导、umdns 是 DAWN 的跨 AP 邻居发现** |
 | 时间控制 | `luci-app-timecontrol` | [mayipashu/luci-app-timecontrol](https://github.com/mayipashu/luci-app-timecontrol)；fork 自 kavass168，**已修上游 ACL 与匿名配置节两个界面失效 bug**（永久内置，不再构建期打补丁） |
 | rtp2httpd | `rtp2httpd` + `luci-app-rtp2httpd` | 二进制用 [mayipashu/rtp2httpd](https://github.com/mayipashu/rtp2httpd)@`d7cc99a`（v3.17.2，含定制 IPTV 播放器 UI）编译；init/配置/LuCI 沿用官方 |
+| KodExplorer（可道云） | `luci-app-kodexplorer` + `nginx-ssl` + `php8` 全栈 | 源码来自 [kiddin9/op-packages](https://github.com/kiddin9/op-packages)（Kwrt，含 kodbox.patch 三处修正），固化进 `packages/luci-app-kodexplorer/`。**独立 nginx 实例听 8081**，不碰 uhttpd 的 80；本体 PHP 程序运行时下载，不编进固件 |
+| jq | `jq` | 官方 feeds；JSON 命令行处理 |
 
 ### 其他（官方原有）
 

@@ -935,7 +935,9 @@ jobs:
             kmod-batman-adv batctl-default luci-proto-batman-adv \
             dawn luci-app-dawn umdns \
             luci-app-timecontrol \
-            rtp2httpd luci-app-rtp2httpd ; do
+            rtp2httpd luci-app-rtp2httpd \
+            luci-app-kodexplorer nginx-ssl php8 php8-fpm \
+            jq ; do
             grep -qx "CONFIG_PACKAGE_${p}=y" .config || USER_MISS="$USER_MISS $p"
           done
           if [ -n "$USER_MISS" ]; then
@@ -944,9 +946,10 @@ jobs:
             echo "  2) feeds 里是否有该包（lucky/easytier 由 diy-part1.sh 从第三方仓库拉取）"
             echo "  3) rtp2httpd 是否被 feeds 同名包覆盖（diy-part1.sh 会先删 feeds 官方版）"
             echo "  4) batman-adv / dawn 是否因内核依赖被剔除（看上面 kmod 报错）"
+            echo "  5) kodexplorer 依赖 nginx-ssl/php8 是否被 feeds 提供（php8 在 lang/，nginx 在 net/）"
             exit 1
           fi
-          echo "✅ 定制预装插件校验通过（homeproxy/lucky/easytier/tinc/frpc/n2n/samba4/FileBrowser-go/openssh-sftp-server/syncthing/watchcat/mesh+batman-adv+dawn+umdns/timecontrol/rtp2httpd）"
+          echo "✅ 定制预装插件校验通过（homeproxy/lucky/easytier/tinc/frpc/n2n/samba4/FileBrowser-go/openssh-sftp-server/syncthing/watchcat/mesh+batman-adv+dawn+umdns/timecontrol/rtp2httpd/kodexplorer/jq）"
 
           # 中文包（po 注入后才存在，缺失只警告不阻断）
           if ! grep -q "^CONFIG_PACKAGE_luci-i18n-airoha-npu-zh-cn=y" .config; then

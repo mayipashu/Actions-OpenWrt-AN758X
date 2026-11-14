@@ -56,6 +56,9 @@ ADD_TIMECONTROL=true    # luci-app-timecontrol（mayipashu fork，已修 ACL+配
                         #   构建期顺带修好上游 ACL 与匿名配置节问题
 ADD_RTP2HTTPD_FORK=true # rtp2httpd：用本人仓库 mayipashu/rtp2httpd 源码编译，
                         #   替换 feeds 官方 3.16.0（详见 packages/rtp2httpd/）
+ADD_KODEXPLORER=true    # luci-app-kodexplorer（可道云）：nginx + php8 在线文件管理，
+                        #   源码固化在 packages/luci-app-kodexplorer/
+                        #   （来自 kiddin9/op-packages，含 Kwrt kodbox.patch 修正）
 # 下面这几个开关都能被环境变量覆盖（: ${VAR:=默认} 的写法）：
 # workflow 里选了「不拉私有仓库」时会注入 ADD_FTTR=false，整段直接跳过。
 : "${ADD_FTTR:=true}"       # FTTR 全家桶总开关（下面的子开关都受它管）★仅 HM2004-DU
@@ -629,6 +632,24 @@ if [ "$ADD_RTP2HTTPD_FORK" = "true" ]; then
     echo "::warning::未找到 $WS_DIR/packages/rtp2httpd，rtp2httpd 仍用 feeds 官方源码"
   fi
 fi
+
+# --- kodexplorer（可道云，仓库内固化源码）---
+# 源码来自 kiddin9/op-packages 的 luci-app-kodexplorer（含 Kwrt kodbox.patch
+# 三处修正），整包固化在 packages/luci-app-kodexplorer/，不再依赖第三方仓库。
+# 它是 nginx + php8 独立站点：init 脚本自带 nginx 实例听 8081（uhttpd 保持 80），
+# 与 rtp2httpd 同款「仓库内源码」策略。依赖（nginx-ssl + php8 全栈）由 config
+# 显式写出 + Makefile LUCI_DEPENDS 双保险。
+if [ "$ADD_KODEXPLORER" = "true" ]; then
+  WS_DIR="${GITHUB_WORKSPACE:-$(pwd)}"
+  if [ -f "$WS_DIR/packages/luci-app-kodexplorer/Makefile" ]; then
+    rm -rf "$PKG_DIR/luci-app-kodexplorer"
+    cp -a "$WS_DIR/packages/luci-app-kodexplorer" "$PKG_DIR/luci-app-kodexplorer"
+    echo "✅ 已拷贝: luci-app-kodexplorer（仓库内固化源码，nginx+php8 独立站点听 8081）"
+  else
+    echo "::error::未找到 $WS_DIR/packages/luci-app-kodexplorer，config 里的 =y 会被 defconfig 剔除"
+    exit 1
+  fi
+fi
 # ---------------------------------------------------------
 # 校验：默认开启的三个插件必须拉到，否则 defconfig 会静默剔除，
 #       编出来的固件缺少状态页还不易察觉
@@ -828,6 +849,7 @@ if [ -n "$(ls -A "$PKG_DIR" 2>/dev/null)" ]; then
   [ "$ADD_MESH"      = "true" ] && REQUIRED="$REQUIRED luci-app-mesh"
   [ "$ADD_TIMECONTROL" = "true" ] && REQUIRED="$REQUIRED luci-app-timecontrol"
   [ "$ADD_RTP2HTTPD_FORK" = "true" ] && REQUIRED="$REQUIRED rtp2httpd"
+  [ "$ADD_KODEXPLORER" = "true" ] && REQUIRED="$REQUIRED luci-app-kodexplorer"
   true
   if [ "$ADD_FTTR" = "true" ] && [ "$FTTR_PROFILE" = "h3c_hm2004-du" ]; then
     # KernelPackage 生成的包名带 kmod- 前缀，索引里写的是 kmod-h3c-fmcs
