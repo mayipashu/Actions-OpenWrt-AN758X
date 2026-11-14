@@ -117,3 +117,30 @@ msgstr "请指定客户端文件。"
 
 msgid "Can't move new file to path: %s"
 msgstr "无法移动新文件到：%s"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "HTTPS"
+msgstr "HTTPS"
+
+msgid "certificate"
+msgstr "证书"
+
+msgid "key"
+msgstr "私钥"
+
+msgid "Remote server"
+msgstr "远程服务器"
+
+msgid "GitHub KodExplorer (master)"
+msgstr "GitHub 可道云（最新）"
+
+msgid "GitHub KodExplorer (4.55)"
+msgstr "GitHub 可道云（4.55）"
+
+msgid "官方 CDN kodexplorer 4.56"
+msgstr "官方 CDN 可道云 4.56"
+
+msgid "官方 CDN kodbox 1.71"
+msgstr "官方 CDN 可道云 1.71"
