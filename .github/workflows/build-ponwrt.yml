@@ -937,6 +937,7 @@ jobs:
             luci-app-timecontrol \
             rtp2httpd luci-app-rtp2httpd \
             luci-app-kodexplorer nginx-ssl php8 php8-fpm \
+            php8-mod-openssl php8-mod-simplexml php8-mod-phar php8-mod-tokenizer \
             jq ; do
             grep -qx "CONFIG_PACKAGE_${p}=y" .config || USER_MISS="$USER_MISS $p"
           done

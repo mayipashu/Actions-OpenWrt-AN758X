@@ -134,13 +134,13 @@ msgid "Remote server"
 msgstr "远程服务器"
 
 msgid "GitHub KodExplorer (master)"
-msgstr "GitHub 可道云（最新）"
-
-msgid "GitHub KodExplorer (4.55)"
-msgstr "GitHub 可道云（4.55）"
+msgstr "GitHub KodExplorer（最新）"
 
 msgid "官方 CDN kodexplorer 4.56"
 msgstr "官方 CDN 可道云 4.56"
 
 msgid "官方 CDN kodbox 1.71"
 msgstr "官方 CDN 可道云 1.71"
+
+msgid "GitHub kodbox (master)"
+msgstr "GitHub kodbox（最新，推荐）"

@@ -46,25 +46,40 @@ local download_headers = {
 }
 
 -- 兜底下载源，按可靠性排序（GitHub 在前，官方 CDN 在后）
+-- 下载源，按优先级排列。
+--
+-- ⚠ 2026-11 改为 kodbox 优先：
+--    实测 kodbox 1.71 与 KodExplorer 4.56 是两代产品，**移动端支持差异极大**：
+--      · 安卓/iOS 官方 App（UA: kodCloud-System）连接时先请求
+--          POST /?user/view/options
+--        必须拿到 200 + JSON（含 viewToken/accessToken/kodID）才认作有效站点。
+--      · KodExplorer 4.56 没有 user/view 控制器，该请求被 302 到登录页，
+--        App 报「请求被中断 / 服务器版本必须 1.0 以上」。
+--      · kodbox 1.71 有完整的 user/view（options/lang/plugins/qrcode/manifest），
+--        App 可正常连接。
+--    因此把 kodbox 放到首位，KodExplorer 仅作兜底（老设备/低配场景）。
+--
+--    GitHub 归档结构：kodbox-main/ 或 KodExplorer-master/（多一层目录），
+--    to_move() 里的 find_app_root() 会自动下钻定位含 index.php 的真实根目录。
 local mirrors = {
+    {
+        name = "GitHub kodbox (master)",
+        url  = "https://github.com/kalcaddle/kodbox/archive/refs/heads/master.zip",
+        kind = "github",
+    },
+    {
+        name = "官方 CDN kodbox 1.71",
+        url  = "https://static.kodcloud.com/update/download/kodbox.1.71.zip",
+        kind = "cdn",
+    },
     {
         name = "GitHub KodExplorer (master)",
         url  = "https://github.com/kalcaddle/KodExplorer/archive/refs/heads/master.zip",
         kind = "github",
     },
     {
-        name = "GitHub KodExplorer (4.55)",
-        url  = "https://github.com/kalcaddle/KodExplorer/archive/refs/tags/4.55.zip",
-        kind = "github",
-    },
-    {
         name = "官方 CDN kodexplorer 4.56",
         url  = "https://static.kodcloud.com/update/download/kodexplorer4.56.zip",
-        kind = "cdn",
-    },
-    {
-        name = "官方 CDN kodbox 1.71",
-        url  = "https://static.kodcloud.com/update/download/kodbox.1.71.zip",
         kind = "cdn",
     },
 }
