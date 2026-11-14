@@ -7,8 +7,14 @@ listen = |SOCK|
 listen.mode = 0666
 listen.allowed_clients = 127.0.0.1
 pm = dynamic
-pm.max_children = 5
-pm.start_servers = 2
-pm.min_spare_servers = 1
-pm.max_spare_servers = 3
+# 2026-11-14 调优：原来 max_children=5，手机/网页并发上传照片时瞬间打满，
+# php-fpm 日志报 "server reached pm.max_children setting (5)"，
+# 后续请求排队超时，表现为上传一直卡在「备份中」。
+# 本机型约 950MB 内存、单进程约 25MB，20 并发峰值约 500MB，安全。
+pm.max_children = 20
+pm.start_servers = 5
+pm.min_spare_servers = 3
+pm.max_spare_servers = 10
+# 每进程处理 500 个请求后回收，防止长期运行内存泄漏
+pm.max_requests = 500
 chdir = /

@@ -5,9 +5,33 @@ events {
     worker_connections  1024;
 }
 http {
+    # ===================================================================
+    # ★★ 2026-11-14 关键修复（务必保留）★★
+    #
+    #   client_max_body_size 必须放在 http/server 层，绝不能只写在
+    #   location ~ \.php 里面。原因：
+    #
+    #     kodbox 的上传接口是 /?explorer/upload/fileUpload 这种
+    #     **query string 形式、URL 不含 .php** 的地址。只写在
+    #     location ~ \.php 里根本匹配不到它，于是 nginx 退回**默认的
+    #     1MB** 上限 —— 手机照片普遍 3~5MB，一传就 413。
+    #
+    #   典型症状（实际踩过）：
+    #     · 前几张能传（小于 1MB 的图），之后永远「备份中」卡住；
+    #     · App/网页的 upload 请求返回 413，而浏览网页一切正常；
+    #     · 改成 0（不限制）后，由 PHP 的 upload_max_filesize 兜底。
+    #
+    #   另外不要再加 try_files 伪静态规则！kodbox 走 query string
+    #   路由，加 try_files 会破坏 WebDAV 等特殊方法的请求
+    #   （PROPFIND 会被兜底成 HTML 页面，WebDAV 直接不可用）。
+    # ===================================================================
+    client_max_body_size 0;
+    client_body_temp_path |temp_path|;
+    client_body_timeout 3600s;
+
     include /etc/nginx/mime.types;
     sendfile on;
-    keepalive_timeout 65;
+    keepalive_timeout 300;
     server {
         listen |PORT|;
         listen [::]:|PORT|;
@@ -27,9 +51,8 @@ http {
             fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name; # 修复 Nginx fastcgi 漏洞
             fastcgi_param PATH_INFO $fastcgi_path_info;
             include /etc/nginx/fastcgi_params;
-            client_max_body_size |upload_max_filesize|;
-            client_body_temp_path |temp_path|;
-            client_body_timeout 3600s;
+            # 大文件传输不缓冲，直接流式转发，避免在 tmpfs 里先落一份
+            fastcgi_buffering off;
             fastcgi_connect_timeout 3600s;
             fastcgi_send_timeout 3600s;
             fastcgi_read_timeout 3600s;

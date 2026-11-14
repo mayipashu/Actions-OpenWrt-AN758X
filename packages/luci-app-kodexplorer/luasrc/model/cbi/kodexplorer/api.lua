@@ -135,7 +135,7 @@ local function exec(cmd, args, writer, timeout)
 end
 
 function get_project_directory()
-    return uci:get(appname, "@global[0]", "project_directory") or "/tmp/kodcloud"
+    return uci:get(appname, "@global[0]", "project_directory") or "/mnt/KodExplorer"
 end
 
 function get_version()

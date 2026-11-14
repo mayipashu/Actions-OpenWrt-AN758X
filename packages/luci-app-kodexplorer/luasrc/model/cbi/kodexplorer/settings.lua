@@ -88,7 +88,7 @@ o = s:taboption("global", DynamicList, "open_basedir", translate("Accessible dir
 o.rmempty = false
 
 o = s:taboption("global", Value, "project_directory", translate("Project directory"), translate("It is recommended to insert a usb flash drive or hard disk and enter the path. For example, /mnt/sda1/kodexplorer"))
-o.default = "/mnt/sda1/kodexplorer"
+o.default = "/mnt/KodExplorer"
 o.rmempty = false
 
 o = s:taboption("global", Button, "_update")

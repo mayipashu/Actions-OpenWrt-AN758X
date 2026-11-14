@@ -1,11 +1,17 @@
 
 config global
 	option port '8081'
-	option upload_max_filesize '64M'
+	# 2048M：手机照片 3~5MB，视频可达数百 MB。这里只是 PHP 上限，
+	# 实际占用取决于传了什么；nginx 侧已放开（client_max_body_size 0）。
+	# 原值 64M 会让 100MB+ 的视频备份直接失败。
+	option upload_max_filesize '2048M'
 	list open_basedir '/'
 	option https '0'
-	option project_directory '/tmp/kodexplorer'
+	# ★ 默认 /mnt（持久存储），不要用 /tmp ——  /tmp 是 tmpfs，
+	#   重启后整个可道云程序和数据都会消失。
+	#   用户可在网页里改成实际挂载点（如 /mnt/KodExplorer）。
+	option project_directory '/mnt/KodExplorer'
 	option ipv6 '0'
-	option memory_limit '64M'
+	# 256M：kodbox 处理大图缩略图/解压时 64M 容易爆内存（原值 64M）
+	option memory_limit '256M'
 	option enable '0'
-

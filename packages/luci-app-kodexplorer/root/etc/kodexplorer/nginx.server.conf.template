@@ -10,6 +10,14 @@
         server_name  localhost;
         root |project_directory|;
         index index.html index.htm index.php;
+
+        # 2026-11-14：上传上限放 server 层。kodbox 上传走
+        # /?explorer/upload/fileUpload（不含 .php），只写在 location 里
+        # 匹配不到，会退回默认 1MB → 手机传照片 413。
+        # 0 = 不限制，由 PHP 的 upload_max_filesize 兜底。
+        client_max_body_size 0;
+        client_body_timeout 3600s;
+
         location ~ \.php(.*)$ {
             fastcgi_pass unix:|SOCK|; # 通过 Unix 套接字执行 PHP
             fastcgi_index index.php;
@@ -17,8 +25,8 @@
             fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name; # 修复 Nginx fastcgi 漏洞
             fastcgi_param PATH_INFO $fastcgi_path_info;
             include /etc/nginx/fastcgi_params;
-            client_max_body_size |upload_max_filesize|;
-            client_body_timeout 3600s;
+            # 大文件传输不缓冲，直接流式转发
+            fastcgi_buffering off;
             fastcgi_connect_timeout 3600s;
             fastcgi_send_timeout 3600s;
             fastcgi_read_timeout 3600s;
