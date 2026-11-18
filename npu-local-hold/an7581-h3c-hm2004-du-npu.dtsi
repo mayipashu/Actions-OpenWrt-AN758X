@@ -58,6 +58,8 @@
 
 	/* MT7916 仅做 RX 卸载，TX 仍走 CPU（与原厂一致） */
 	airoha,mt7916-rx-only-memory;
+	/* MT7916 NPU 固件使用 legacy WLAN mailbox ABI（原厂同名属性） */
+	airoha,legacy-wlan-mailbox;
 };
 
 /*

@@ -1,0 +1,123 @@
+From: mayipashu <mayipashu@users.noreply.github.com>
+Date: Wed, 19 Nov 2026 11:00:00 +0800
+Subject: [PATCH] net: airoha: npu: Support legacy MT7916 WLAN mailbox firmware
+
+EN7581 boards with MT7916 WiFi (e.g. H3C HM2004-DU) ship a NPU firmware
+built against the vendor "legacy WLAN mailbox" ABI, selected in the board
+DTB with the "airoha,legacy-wlan-mailbox" property. Reverse engineering
+the vendor an7581_bsp_npu driver (kernel 5.4.302) shows that firmware:
+
+  - has NO PPE (function 5) mailbox channel: the vendor PPE driver talks
+    to the NPU through a private 0x818 register protocol instead. The
+    mainline driver keeps sending function-5 messages that can never be
+    answered, producing an endless "mailbox function 5 timed out" storm
+    (900+ messages per boot observed);
+
+  - is never queried for a firmware version: the vendor probe stores
+    version 0 and skips the handshake;
+
+  - is started with a plain BOOT_CONFIG=0 / BOOT_TRIGGER 0->1 pulse,
+    without the MIB(10..21), per-core BOOT_BASE and BOOT_CONFIG=0xff
+    programming the mainline firmware expects.
+
+Gate all three differences on the new npu->legacy_abi flag, read from the
+same DTB property the vendor driver uses. Boards without the property
+behave exactly as before.
+
+For PPE, return -EOPNOTSUPP so airoha_ppe falls back to its non-NPU path
+instead of hammering the dead channel.
+
+Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
+---
+--- a/drivers/net/ethernet/airoha/airoha_npu.c
++++ b/drivers/net/ethernet/airoha/airoha_npu.c
+@@ -333,6 +333,11 @@
+ 
+ static int airoha_npu_ppe_init(struct airoha_npu *npu)
+ {
++	/* legacy firmware has no PPE mailbox channel (vendor uses a
++	 * private register protocol); refuse instead of timing out */
++	if (npu->legacy_abi)
++		return -EOPNOTSUPP;
++
+ 	struct ppe_mbox_data *ppe_data;
+ 	int err;
+ 
+@@ -693,6 +698,32 @@
+ 	.disable_locking	= true,
+ };
+ 
++/*
++ * Legacy BSP firmware support ("airoha,legacy-wlan-mailbox").
++ *
++ * MT7916 NPU firmware from the vendor BSP:
++ *  - does not implement the PPE (function 5) mailbox channel; the vendor
++ *    PPE driver talks to the NPU through a private register protocol
++ *    instead, so we must refuse PPE mailbox messages or they retry forever;
++ *  - is not queried for its version at probe time (vendor sets version 0);
++ *  - is started with BOOT_CONFIG=0 and a TRIGGER 0->1 pulse, without the
++ *    per-core BOOT_BASE/MIB setup the mainline firmware expects.
++ * Recovered by disassembling the vendor an7581_bsp_npu driver.
++ */
++static void airoha_npu_legacy_boot(struct airoha_npu *npu, void __iomem *base)
++{
++	void __iomem *cluster = base + NPU_CLUSTER_BASE_ADDR;
++
++	dev_info(npu->dev, "legacy boot: config=0, trigger pulse\n");
++	writel_relaxed(0, cluster + 0x4);   /* BOOT_CONFIG */
++	wmb();
++	writel_relaxed(0, cluster);         /* BOOT_TRIGGER */
++	wmb();
++	usleep_range(1000, 2000);
++	writel_relaxed(1, cluster);         /* release cores */
++	msleep(100);
++}
++
+ static int airoha_npu_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+@@ -711,6 +742,11 @@
+ 		return -ENOMEM;
+ 
+ 	npu->dev = dev;
++	npu->legacy_abi = of_property_read_bool(dev->of_node,
++						"airoha,legacy-wlan-mailbox");
++	if (npu->legacy_abi)
++		dev_info(dev, "legacy WLAN mailbox ABI firmware\n");
++
+ 	npu->ops.ppe_init = airoha_npu_ppe_init;
+ 	npu->ops.ppe_deinit = airoha_npu_ppe_deinit;
+ 	npu->ops.ppe_init_stats = airoha_npu_ppe_stats_setup;
+@@ -780,6 +816,11 @@
+ 	if (err)
+ 		return err;
+ 
++	if (npu->legacy_abi) {
++		airoha_npu_legacy_boot(npu, base);
++		goto version_check;
++	}
++
+ 	regmap_write(npu->regmap, REG_CR_NPU_MIB(10),
+ 		     res.start + NPU_EN7581_FIRMWARE_RV32_MAX_SIZE);
+ 	regmap_write(npu->regmap, REG_CR_NPU_MIB(11), 0x40000); /* SRAM 256K */
+@@ -797,7 +838,9 @@
+ 	regmap_write(npu->regmap, REG_CR_BOOT_TRIGGER, 0x1);
+ 	msleep(100);
+ 
+-	if (!airoha_npu_wlan_msg_get(npu, 0, WLAN_FUNC_GET_WAIT_NPU_VERSION,
++version_check:
++	if (!npu->legacy_abi &&
++	    !airoha_npu_wlan_msg_get(npu, 0, WLAN_FUNC_GET_WAIT_NPU_VERSION,
+ 				     &val, sizeof(val), GFP_KERNEL))
+ 		dev_info(dev, "NPU fw version: %0d.%d\n",
+ 			 (val >> 16) & 0xffff, val & 0xffff);
+--- a/include/linux/soc/airoha/airoha_offload.h
++++ b/include/linux/soc/airoha/airoha_offload.h
+@@ -167,6 +167,7 @@
+ #if (IS_BUILTIN(CONFIG_NET_AIROHA_NPU) || IS_MODULE(CONFIG_NET_AIROHA_NPU))
+ 	struct device *dev;
+ 	struct regmap *regmap;
++	bool legacy_abi;
+ 
+ 	struct airoha_npu_core {
+ 		struct airoha_npu *npu;

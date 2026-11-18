@@ -255,7 +255,7 @@ echo "🎉 diy-part2.sh 执行完毕 (author=$FW_AUTHOR)"
 if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
   DTS="target/linux/airoha/dts/an7581-h3c-hm2004-du.dts"
   DTSI_NAME="an7581-h3c-hm2004-du-npu.dtsi"
-  DTSI_SRC="$GITHUB_WORKSPACE/files/arch/arm64/boot/dts/airoha/$DTSI_NAME"
+  DTSI_SRC="$GITHUB_WORKSPACE/npu-local-hold/$DTSI_NAME"
 
   if [ ! -f "$DTS" ]; then
     echo "::warning::未找到 $DTS，跳过 NPU 注入"
@@ -267,15 +267,17 @@ if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
     # 在 an7581.dtsi 的 include 之后插入叠加层 include
     perl -i -pe "s|(#include \"an7581\.dtsi\")|\$1\n#include \"$DTSI_NAME\"| unless \$done; \$done=1 if /#include \"an7581\\.dtsi\"/" "$DTS"
     cp "$DTSI_SRC" "target/linux/airoha/dts/$DTSI_NAME"
-    echo "✅ NPU/WED 叠加层已注入：$DTSI_NAME"
+    mkdir -p files/lib/firmware/airoha
+    cp "$GITHUB_WORKSPACE/npu-local-hold/lib/firmware/airoha/en7581_MT7916_npu_"*.bin files/lib/firmware/airoha/
+    echo "✅ NPU/WED 叠加层已注入：$DTSI_NAME（含固件）"
     grep -n "an7581.*dtsi" "$DTS" | head -3
   fi
 
   # NPU 固件文件：files/ 下已放好，OpenWrt 会自动打包进 rootfs
-  if [ -f "$GITHUB_WORKSPACE/files/lib/firmware/airoha/en7581_MT7916_npu_rv32.bin" ]; then
+  if [ -f "$GITHUB_WORKSPACE/npu-local-hold/lib/firmware/airoha/en7581_MT7916_npu_rv32.bin" ]; then
     echo "✅ MT7916 NPU 固件已在 files/ 中，将随固件打包"
   else
-    echo "::warning::未找到 MT7916 NPU 固件"
+    echo "::warning::未找到 MT7916 NPU 固件（npu-local-hold/lib/firmware/airoha/）"
   fi
 
   # ---------------------------------------------------------
