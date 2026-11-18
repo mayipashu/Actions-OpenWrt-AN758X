@@ -33,6 +33,26 @@
 			reg = <0x0 0x81000000 0x0 0x1600000>;
 		};
 
+		/*
+		 * tx-pkt / tx-bufid：上游 airoha_npu_wlan_init_memory() 会
+		 * 无条件按名字查找这两个区，缺一个就 return 错误、NPU 初始化中断。
+		 * 原厂 MT7916 是 RX-only（DTB 里只有 pkt/ba），但上游驱动没有
+		 * 这个分支，所以这里必须补上，否则 probe 直接失败。
+		 *
+		 * 布局参考原厂 MT7992 板（an7581-npu-wlan.dtsi）：
+		 *   npu-txpkt   @8cc00000 64MB
+		 *   npu-txbufid @90c00000 0x6800
+		 */
+		npu_txpkt: npu-txpkt@8cc00000 {
+			no-map;
+			reg = <0x0 0x8cc00000 0x0 0x4000000>;
+		};
+
+		npu_txbufid: npu-txbufid@90c00000 {
+			no-map;
+			reg = <0x0 0x90c00000 0x0 0x6800>;
+		};
+
 		npu_ba: npu-ba@90c06800 {
 			no-map;
 			reg = <0x0 0x90c06800 0x0 0x200000>;
@@ -50,8 +70,10 @@
 &npu {
 	status = "okay";
 
-	memory-region = <&npu_binary>, <&npu_pkt>, <&npu_ba>;
-	memory-region-names = "binary", "pkt", "ba";
+	memory-region = <&npu_binary>, <&npu_pkt>, <&npu_txpkt>,
+			<&npu_txbufid>, <&npu_ba>;
+	memory-region-names = "binary", "pkt", "tx-pkt",
+			      "tx-bufid", "ba";
 
 	firmware-name = "airoha/en7581_MT7916_npu_rv32.bin",
 			"airoha/en7581_MT7916_npu_data.bin";
