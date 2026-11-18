@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+ * H3C HM2004-DU —— WiFi→PON 硬件转发（WED/NPU）实验性叠加层
+ *
+ * 目的：验证上游 6.18 的 airoha-npu 驱动能否加载并驱动
+ *       MT7916 专用 NPU 固件（en7581_MT7916_npu_*.bin）。
+ *
+ * 依据：原厂 QWRT 固件 DTB 实证（见 reverse-out/board.dts）
+ *   - npu@1e900000 使用 firmware-name 指定 MT7916 固件
+ *   - 需要 npu-pkt(22MB) + npu-ba(2MB) 两个额外内存区
+ *   - airoha,mt7916-rx-only-memory：MT7916 仅 RX 卸载
+ *   - wed@1fa02000：WED 硬件，双通道
+ *
+ * 注意：本叠加层只声明硬件，不改驱动代码。
+ *       上游驱动已支持从 DTS 读取 firmware-name 与 pkt/ba 内存区。
+ */
+
+/ {
+	/*
+	 * WiFi 卸载专用内存区。
+	 * 原厂布局：npu-pkt @0x81000000 (22MB)、npu-ba @0x90c06800 (2MB)
+	 * 上游 en7581.dtsi 已占用：atf 0x80000000(2M)、npu_binary 0x84000000(10M)、
+	 *                          qdma0 0x87000000(32M)、qdma1 0x89000000(16M)
+	 * 0x81000000 区域在上游是空闲的，可安全占用。
+	 */
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		npu_pkt: npu-pkt@81000000 {
+			no-map;
+			reg = <0x0 0x81000000 0x0 0x1600000>;
+		};
+
+		npu_ba: npu-ba@90c06800 {
+			no-map;
+			reg = <0x0 0x90c06800 0x0 0x200000>;
+		};
+	};
+};
+
+/*
+ * NPU 节点改造：
+ *   - 保持上游 compatible（驱动要匹配 airoha,en7581-npu）
+ *   - 追加 pkt/ba 内存区（原厂顺序：binary, pkt, ba）
+ *   - firmware-name 指向 MT7916 专用固件
+ *   - airoha,mt7916-rx-only-memory 标记 RX-only 模式
+ */
+&npu {
+	status = "okay";
+
+	memory-region = <&npu_binary>, <&npu_pkt>, <&npu_ba>;
+	memory-region-names = "binary", "pkt", "ba";
+
+	firmware-name = "airoha/en7581_MT7916_npu_rv32.bin",
+			"airoha/en7581_MT7916_npu_data.bin";
+
+	/* MT7916 仅做 RX 卸载，TX 仍走 CPU（与原厂一致） */
+	airoha,mt7916-rx-only-memory;
+};
+
+/*
+ * WED 硬件节点。
+ * 上游 airoha target 完全没有此节点；原厂 DTB 的实证如下。
+ * 当前 mt76 开源驱动不会使用它（需要 mtk_wed 子系统），
+ * 先声明出来，供后续驱动移植阶段使用。
+ */
+/ {
+	wed: wed@1fa02000 {
+		compatible = "en751221,wed";
+		wed_num = <0x02>;
+		pci_slot_map = <0x00 0x01>;
+		reg = <0x00 0x1fa02000 0x00 0xb00>,
+		      <0x00 0x1fa03000 0x00 0xb00>;
+		interrupts = <GIC_SPI 67 IRQ_TYPE_LEVEL_HIGH>,
+			     <GIC_SPI 68 IRQ_TYPE_LEVEL_HIGH>;
+		status = "disabled";
+	};
+};

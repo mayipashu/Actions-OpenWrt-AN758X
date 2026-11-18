@@ -242,3 +242,41 @@ fi
 [ -f scripts/diy-part2-crypto.sh ] && . ./scripts/diy-part2-crypto.sh || true
 
 echo "🎉 diy-part2.sh 执行完毕 (author=$FW_AUTHOR)"
+
+# =========================================================
+# 9. WiFi→PON 硬件转发（WED/NPU）—— HM2004-DU 实验性开启
+#    依据原厂 QWRT 固件逆向（见 reverse-out/逆向报告.md）：
+#      · 原厂用 MT7916 专用 NPU 固件 en7581_MT7916_npu_*.bin
+#      · 需要 npu-pkt(22MB) + npu-ba(2MB) 额外内存区
+#      · airoha,mt7916-rx-only-memory 标记 RX-only 卸载
+#    上游驱动已支持从 DTS 读 firmware-name 与 pkt/ba 区，无需改驱动。
+#    开关：ADD_NPU_OFFLOAD=true 才注入，默认关闭（实验阶段）
+# =========================================================
+if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
+  DTS="target/linux/airoha/dts/an7581-h3c-hm2004-du.dts"
+  DTSI_NAME="an7581-h3c-hm2004-du-npu.dtsi"
+  DTSI_SRC="$GITHUB_WORKSPACE/files/arch/arm64/boot/dts/airoha/$DTSI_NAME"
+
+  if [ ! -f "$DTS" ]; then
+    echo "::warning::未找到 $DTS，跳过 NPU 注入"
+  elif [ ! -f "$DTSI_SRC" ]; then
+    echo "::warning::未找到叠加层 $DTSI_SRC，跳过 NPU 注入"
+  elif grep -q "$DTSI_NAME" "$DTS"; then
+    echo "ℹ NPU 叠加层已存在，跳过"
+  else
+    # 在 an7581.dtsi 的 include 之后插入叠加层 include
+    perl -i -pe "s|(#include \"an7581\.dtsi\")|\$1\n#include \"$DTSI_NAME\"| unless \$done; \$done=1 if /#include \"an7581\\.dtsi\"/" "$DTS"
+    cp "$DTSI_SRC" "target/linux/airoha/dts/$DTSI_NAME"
+    echo "✅ NPU/WED 叠加层已注入：$DTSI_NAME"
+    grep -n "an7581.*dtsi" "$DTS" | head -3
+  fi
+
+  # NPU 固件文件：files/ 下已放好，OpenWrt 会自动打包进 rootfs
+  if [ -f "$GITHUB_WORKSPACE/files/lib/firmware/airoha/en7581_MT7916_npu_rv32.bin" ]; then
+    echo "✅ MT7916 NPU 固件已在 files/ 中，将随固件打包"
+  else
+    echo "::warning::未找到 MT7916 NPU 固件"
+  fi
+else
+  echo "ℹ ADD_NPU_OFFLOAD != true，保持默认（无 WiFi 硬件转发）"
+fi
