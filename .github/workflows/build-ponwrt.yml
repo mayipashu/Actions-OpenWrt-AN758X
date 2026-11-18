@@ -40,6 +40,8 @@ env:
   PRIVATE_REPO_BRANCH: ${{ github.event.inputs.private_repo_branch || 'main' }}
   FTTR_LUCI_REPO: ${{ github.event.inputs.fttr_luci_repo || 'LazuliKao/luci-app-fttr' }}
   FTTR_LUCI_BRANCH: ${{ github.event.inputs.fttr_luci_branch || 'main' }}
+  # WiFi→PON 硬件转发（WED/NPU）实验开关
+  ADD_NPU_OFFLOAD: ${{ github.event.inputs.npu_offload || 'false' }}
 
 on:
   repository_dispatch:
@@ -168,6 +170,14 @@ on:
         description: '私有仓库分支'
         required: false
         default: 'main'
+      npu_offload:
+        description: 'WiFi→PON 硬件转发（WED/NPU），仅 h3c_hm2004-du。实验性：注入 MT7916 NPU 固件 + DTS 叠加层'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
       ssh:
         description: 'SSH connection to Actions (仅 main 分支、仓库所有者可触发)'
         required: false
@@ -777,6 +787,7 @@ jobs:
           FW_AUTHOR="$FW_AUTHOR" FW_BUILD_TIME="$FW_BUILD_TIME" FW_DESC_SUFFIX="$FW_DESC_SUFFIX" \
           WIFI_5G_COUNTRY="$WIFI_5G_COUNTRY" WIFI_5G_CHANNEL="$WIFI_5G_CHANNEL" \
           WIFI_5G_HTMODE="$WIFI_5G_HTMODE" WIFI_5G_FALLBACK="$WIFI_5G_FALLBACK" \
+          ADD_NPU_OFFLOAD="$ADD_NPU_OFFLOAD" \
             "$GITHUB_WORKSPACE/$DIY_P2_SH"
 
           # 可选包是否被 defconfig 接受，要等步骤 9 之后才知道；
