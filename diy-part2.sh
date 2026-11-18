@@ -277,6 +277,26 @@ if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
   else
     echo "::warning::未找到 MT7916 NPU 固件"
   fi
+
+  # ---------------------------------------------------------
+  # 内核补丁：让 TX 侧内存区变成可选
+  #
+  # 上游 airoha_npu_wlan_init_memory() 无条件要求 tx-bufid / pkt / tx-pkt
+  # 三个内存区，缺一个就 probe 失败。但 MT7916 是 RX-only 设计，原厂 DTB
+  # 里根本没有 tx-pkt（TX 仍走 CPU）。补丁把 tx-bufid / tx-pkt 改成
+  # 「DTS 里有才下发」，这样既能让 MT7916 通过 probe，又不多占 64MB 内存。
+  # ---------------------------------------------------------
+  KVER="$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/airoha/Makefile 2>/dev/null || echo 6.18)"
+  KPATCH_DIR="target/linux/airoha/patches-${KVER}"
+  NPU_PATCH_SRC="$GITHUB_WORKSPACE/patches/airoha/400-net-airoha-npu-support-wlan-rx-only-offload.patch"
+  NPU_PATCH_DST="$KPATCH_DIR/400-net-airoha-npu-support-wlan-rx-only-offload.patch"
+
+  if [ -d "$KPATCH_DIR" ] && [ -f "$NPU_PATCH_SRC" ]; then
+    cp "$NPU_PATCH_SRC" "$NPU_PATCH_DST"
+    echo "✅ NPU RX-only 补丁已注入：$NPU_PATCH_DST"
+  else
+    echo "::warning::NPU RX-only 补丁未注入（KPATCH_DIR=$KPATCH_DIR 是否存在：$([ -d "$KPATCH_DIR" ] && echo yes || echo no)）"
+  fi
 else
   echo "ℹ ADD_NPU_OFFLOAD != true，保持默认（无 WiFi 硬件转发）"
 fi

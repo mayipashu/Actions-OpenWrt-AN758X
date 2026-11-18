@@ -1,0 +1,68 @@
+From: mayipashu <mayipashu@users.noreply.github.com>
+Date: Tue, 18 Nov 2026 10:30:00 +0800
+Subject: [PATCH] net: airoha: npu: Support WLAN RX-only offload mode
+
+EN7581 boards equipped with MT7916 (e.g. H3C HM2004-DU) only offload the
+RX path to the NPU: the WiFi chip has no NPU TX ring, and the vendor BSP
+device tree marks such boards with "airoha,mt7916-rx-only-memory", which
+reserves only the "pkt" and "ba" regions but no "tx-pkt".
+
+airoha_npu_wlan_init_memory() currently treats every memory region as
+mandatory, so of_reserved_mem_region_to_resource_byname() fails on boards
+without "tx-pkt" and probe aborts, leaving the NPU unusable.
+
+Make the TX-side regions conditional, exactly like "ba" already is: only
+send the corresponding WLAN_FUNC_SET_WAIT_* command when the region is
+actually described in the device tree. Boards that do provide them keep
+the previous behaviour.
+
+This is a prerequisite for enabling NPU offload on MT7916 designs, whose
+NPU firmware (en7581_MT7916_npu_*.bin) is RX-only.
+
+Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
+---
+
+--- a/drivers/net/ethernet/airoha/airoha_npu.c
++++ b/drivers/net/ethernet/airoha/airoha_npu.c
+@@ -539,20 +539,33 @@
+ 	if (err)
+ 		return err;
+ 
+-	cmd = WLAN_FUNC_SET_WAIT_TX_BUF_CHECK_ADDR;
+-	err = airoha_npu_wlan_set_reserved_memory(npu, 0, "tx-bufid", cmd);
+-	if (err)
+-		return err;
++	/*
++	 * TX-side regions are optional: RX-only designs (MT7916) reserve
++	 * neither "tx-bufid" nor "tx-pkt", and must not be told to DMA
++	 * through buffers they never allocated.
++	 */
++	if (of_property_match_string(npu->dev->of_node, "memory-region-names",
++				     "tx-bufid") >= 0) {
++		cmd = WLAN_FUNC_SET_WAIT_TX_BUF_CHECK_ADDR;
++		err = airoha_npu_wlan_set_reserved_memory(npu, 0, "tx-bufid",
++							  cmd);
++		if (err)
++			return err;
++	}
+ 
+ 	cmd = WLAN_FUNC_SET_WAIT_PKT_BUF_ADDR;
+ 	err = airoha_npu_wlan_set_reserved_memory(npu, 0, "pkt", cmd);
+ 	if (err)
+ 		return err;
+ 
+-	cmd = WLAN_FUNC_SET_WAIT_TX_PKT_BUF_ADDR;
+-	err = airoha_npu_wlan_set_reserved_memory(npu, 0, "tx-pkt", cmd);
+-	if (err)
+-		return err;
++	if (of_property_match_string(npu->dev->of_node, "memory-region-names",
++				     "tx-pkt") >= 0) {
++		cmd = WLAN_FUNC_SET_WAIT_TX_PKT_BUF_ADDR;
++		err = airoha_npu_wlan_set_reserved_memory(npu, 0, "tx-pkt",
++							  cmd);
++		if (err)
++			return err;
++	}
+ 
+ 	if (of_property_match_string(npu->dev->of_node, "memory-region-names",
+ 				     "ba") >= 0) {
