@@ -347,3 +347,55 @@ if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
 else
   echo "ℹ ADD_NPU_OFFLOAD != true，保持默认（无 WiFi 硬件转发）"
 fi
+
+# ---------------------------------------------------------
+# A 方案脚本执行位兜底：git checkout 可能丢 exec bit，
+# workflow 只 chmod 了 files/sbin 与 uci-defaults，
+# 我们的 hotplug 脚本与 pin 脚本在这里补齐。
+# ---------------------------------------------------------
+# cwd = OpenWrt 根，files/ 是 workflow 步骤 6 已拷贝的 overlay
+[ -d "files/etc/hotplug.d/net" ] && \
+  chmod +x files/etc/hotplug.d/net/* 2>/dev/null || true
+[ -f "files/usr/sbin/pin-wifi-cpus.sh" ] && \
+  chmod +x files/usr/sbin/pin-wifi-cpus.sh 2>/dev/null || true
+
+# =========================================================
+# 10. PPE 硬件转发稳定性修复（C 方案）—— 独立于 NPU 实验
+#    来源：wuziwei/ponwrt-ZN504-HG5585F（恩山帖 8497992）
+#
+#    该作者在同款 AN7581+MT7916 的 HG5585F 上深度调试 PPE 后
+#    产出的 8 个补丁，修复上游 airoha_ppe 的真实 bug：
+#      931  PON-WAN IPv6 PPPoE 流卸载死锁（L3 误跌 L2 子流 +
+#           PPPoE Session ID 被清零 → NPU 端口 6 黑洞）
+#      932  网桥 FDB 端口卸载
+#      941  NPU 固件信息缓存 + IPv6 SMAC 元数据解码
+#      947  LAN/WAN SRAM 拥塞初始化
+#      951  网桥 fastpath TTL 保留
+#
+#    这些修复对「PON-有线」方向的 PPE 硬件转发直接受益，
+#    与 NPU 实验无关、默认启用，可用 ADD_PPE_FIXES=false 关闭。
+#
+#    A 方案（四核亲和脚本 + RPS）不需要构建期处理：
+#    files/ overlay 会随固件自动打包。
+# =========================================================
+if [ "${ADD_PPE_FIXES:-true}" = "true" ]; then
+  KVER_P="$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/airoha/Makefile 2>/dev/null || echo 6.18)"
+  KPATCH_DIR_P="target/linux/airoha/patches-${KVER_P}"
+  PPE_FIX_SRC="$GITHUB_WORKSPACE/patches/airoha/ppe-fixes"
+
+  if [ -d "$KPATCH_DIR_P" ] && [ -d "$PPE_FIX_SRC" ]; then
+    n=0
+    for pf in "$PPE_FIX_SRC"/*.patch; do
+      [ -f "$pf" ] || continue
+      cp "$pf" "$KPATCH_DIR_P/"
+      n=$((n+1))
+    done
+    echo "✅ PPE 修复补丁已注入：$n 个（931/932/941/947/951 系列）"
+    # 注：与 400 的 hunk 不重叠（400 在 wlan_init_memory:539，
+    #     941-01 在 regmap_config:722 与 probe:833），可共存
+  else
+    echo "::warning::PPE 修复补丁未注入（目录缺失：$KPATCH_DIR_P 或 $PPE_FIX_SRC）"
+  fi
+else
+  echo "ℹ ADD_PPE_FIXES != true，跳过 PPE 修复补丁"
+fi

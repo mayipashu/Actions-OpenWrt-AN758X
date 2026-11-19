@@ -1,0 +1,19 @@
+#!/bin/sh
+# H3C HM2004-DU RPS 流表分发 —— 移植自 wuziwei/ponwrt-ZN504-HG5585F
+# 按本机接口表适配：去掉 dae0/tun0（无），加入 easytier/n2n/tinc（本机在用）
+# fttr0-16 不加 RPS：FTTR 下行口走 PPE 硬件转发，软 RPS 反而增加开销
+[ "$ACTION" = "add" ] || [ "$ACTION" = "bind" ] || [ "$ACTION" = "ifup" ] || exit 0
+
+dev="${DEVICENAME:-$INTERFACE}"
+case "$dev" in
+    pppoe-wan|phy0-ap0|phy1-ap0|pon0|eth0|lan1|lan2|lan3|lan4|br-lan|easytier|n2n|tinc)
+        sysctl -w net.core.rps_sock_flow_entries=32768 >/dev/null 2>&1
+        if [ -d "/sys/class/net/$dev/queues" ]; then
+            for q in /sys/class/net/$dev/queues/rx-*; do
+                # 0xd = CPU0/2/3（CPU1 让给 WiFi HIF 中断）
+                [ -f "$q/rps_cpus" ] && echo d > "$q/rps_cpus" 2>/dev/null
+                [ -f "$q/rps_flow_cnt" ] && echo 4096 > "$q/rps_flow_cnt" 2>/dev/null
+            done
+        fi
+        ;;
+esac

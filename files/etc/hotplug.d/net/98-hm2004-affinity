@@ -1,0 +1,15 @@
+#!/bin/sh
+# H3C HM2004-DU 专属四核亲和触发器
+# 上游的 99-mt7916-cpu-affinity 只匹配 HG5585F 板型，
+# 本机（h3c,hm2004-du）会被它直接跳过，所以需要独立入口。
+# 命名 98- 使其先于上游 99- 执行，phy 上线即绑定。
+
+[ "$ACTION" = "add" ] || exit 0
+
+case "$DEVICENAME" in
+	phy*-ap0)
+		/usr/sbin/pin-wifi-cpus.sh
+		;;
+esac
+
+exit 0
