@@ -1,5 +1,5 @@
 From: mayipashu <mayipashu@users.noreply.github.com>
-Date: Wed, 19 Nov 2026 16:30:00 +0800
+Date: Wed, 19 Nov 2026 18:00:00 +0800
 Subject: [PATCH] mt7915: add NPU receive offload for PCIe MT7915/MT7916
 
 Port the NPU receive transport from Sirherobrine23/mt76 (branch
@@ -20,6 +20,9 @@ Adaptations required before the code applies here:
     header). Define it locally with the vendor BSP numbering and expose a
     mt7915_npu_model module parameter so the value can be overridden at
     runtime.
+  - The openwrt airoha PPE backend exposes only check_skb(), not the
+    reason-aware check_skb_reason() variant the fork prefers, so the
+    reason path is dropped and the common check_skb branch is used.
   - The fork's main.c targets a newer mac80211 API and cannot be taken
     wholesale. The NPU hooks are added surgically instead: station
     alloc/remove cleanup, RX BA start/stop authorization, key-change BA
@@ -382,7 +385,7 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
 +	default n
 --- /dev/null
 +++ b/mt7915/npu.c
-@@ -0,0 +1,807 @@
+@@ -0,0 +1,805 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* Airoha legacy NPU receive transport for PCIe MT7915/MT7916 radios. */
 +#include <linux/debugfs.h>
@@ -1128,14 +1131,12 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
 +		skb->dev = ieee80211_vif_to_wdev(vif)->netdev;
 +		skb_reset_mac_header(skb);
 +		ppe = dev->npu->ppe;
-+		if (ppe && ppe->ops.check_skb_reason)
-+			airoha_ppe_dev_check_skb_reason(ppe, skb, info & 0x7fff,
-+						      reason, AIROHA_PPE_RX_GEM_NONE);
-+		/* The EN7523 V2 backend exposes check_skb, without the
-+		 * reason-aware callback. Like its Ethernet RX path, learn from
-+		 * FOE_UNHIT and HIT_UNBIND as well as the rate-reached case.
++		/* The openwrt airoha PPE backend only exposes check_skb,
++		 * without the reason-aware callback. Like its Ethernet RX
++		 * path, learn from FOE_UNHIT and HIT_UNBIND as well as the
++		 * rate-reached case.
 +		 */
-+		else if (ppe &&
++		if (ppe &&
 +			 (reason == MT7915_NPU_PPE_FOE_UNHIT ||
 +			  reason == MT7915_NPU_PPE_HIT_UNBIND ||
 +			  reason == PPE_CPU_REASON_HIT_UNBIND_RATE_REACHED))
