@@ -1,25 +1,30 @@
 From: mayipashu <mayipashu@users.noreply.github.com>
-Date: Wed, 19 Nov 2026 12:00:00 +0800
+Date: Wed, 19 Nov 2026 13:00:00 +0800
 Subject: [PATCH] mt7915: add NPU receive offload for legacy MT7916 firmware
 
-Bring up hardware packet offload on EN7581 boards with PCIe MT7915/MT7916
-radios, using the NPU receive transport from Sirherobrine23/mt76
-(branch npu_en7523) with three adaptations for the EN7581 PCIe layout:
+Port the NPU receive transport from Sirherobrine23/mt76 (branch
+npu_en7523) onto the current mt76 baseline, adapted for EN7581.
 
-  - EN7581 maps its PCIe controllers at 0x1fc0/0x1fc2 000 instead of
-    0x1fa9{1,2}000, so both base addresses are accepted and the P0/P1
-    port mapping covers the new pairs;
-  - the chip-model enum (AIROHA_NPU_WLAN_MT7915/_DBDC/_MT7916) is defined
-    locally until the ABI lands in the airoha headers, with a
-    mt7915_npu_model module parameter to override the value at runtime;
-  - only the NPU-relevant hunks are ported (dma/mac/pci/mt7915.h),
-    main.c is left untouched so the fork's newer mac80211 API is not
-    required.
+Three adaptations are needed before the code applies here:
 
-When the NPU transport is active it owns the Wi-Fi data RX rings: their
-completion interrupts are masked and the RX queues are allocated through
-mt7915_npu_rx_ring() so descriptors live in NPU memory. The PPE receives
-the reordered frames directly, bypassing the host CPU path.
+  - EN7581 maps its PCIe controllers at 0x1fc0/0x1fc2 000, not the
+    EN7523 0x1fa9{1,2}000 the fork assumes. Accept both pairs and extend
+    the P0/P1 port mapping accordingly;
+  - the AIROHA_NPU_WLAN_MT7915/_DBDC/_MT7916 chip-model enum is only used
+    in the fork, never defined (it depends on an out-of-tree airoha
+    header). Define it locally with the vendor BSP numbering and expose a
+    mt7915_npu_model module parameter so the encoding can be overridden on
+    a running system;
+  - the fork's main.c targets a newer mac80211 API, so it is not taken
+    wholesale. Instead the six NPU hooks are added surgically to the
+    existing file: station alloc/remove cleanup, RX BA start/stop
+    authorization, key-change BA reset, and a sta_state wrapper that
+    tracks nan80211's AUTHORIZED transitions.
+
+When active the NPU owns the Wi-Fi data RX rings: their completion
+interrupts are masked and the RX queues are allocated through
+mt7915_npu_rx_ring() so descriptors live in NPU memory. Reordered frames
+then enter the PPE directly instead of travelling through the host CPU.
 
 Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
 ---
@@ -104,6 +109,144 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
  			mt76_rx(&dev->mt76, q, skb);
  			return;
  		}
+--- a/mt7915/main.c
++++ b/mt7915/main.c
+@@ -252,6 +252,12 @@
+ 		goto err;
+ 	}
+ 
++	ret = mt7915_npu_sta_clear(dev, mvif->phy->mt76->band_idx, idx);
++	if (ret) {
++		mt76_wcid_mask_clear(mdev->wcid_mask, idx);
++		goto err;
++	}
++
+ 	INIT_LIST_HEAD(&mvif->sta.rc_list);
+ 	mvif->sta.wcid.idx = idx;
+ 	mvif->sta.wcid.tx_info |= MT_WCID_TX_INFO_SET;
+@@ -377,7 +383,7 @@
+ 	struct mt76_wcid *wcid = &msta->wcid;
+ 	u8 *wcid_keyidx = &wcid->hw_key_idx;
+ 	int idx = key->keyidx;
+-	int err = 0;
++	int err = 0, i;
+ 
+ 	if (sta && !wcid->sta) {
+ 		if (cmd != SET_KEY)
+@@ -417,6 +423,29 @@
+ 
+ 	mutex_lock(&dev->mt76.mutex);
+ 
++	/* Key changes retire NPU BA state before the new replay epoch. */
++	if (cmd == SET_KEY && sta) {
++		err = mt7915_npu_sta_clear(dev, phy->mt76->band_idx, wcid->idx);
++		if (err)
++			goto out;
++	} else if (cmd == SET_KEY && mt7915_npu_active(dev)) {
++		for (i = 1; i < ARRAY_SIZE(dev->mt76.wcid); i++) {
++			struct mt76_wcid *peer;
++			struct mt7915_sta *peer_sta;
++
++			peer = rcu_dereference_protected(dev->mt76.wcid[i],
++					lockdep_is_held(&dev->mt76.mutex));
++			if (!peer || !peer->sta)
++				continue;
++			peer_sta = container_of(peer, struct mt7915_sta, wcid);
++			if (peer_sta->vif != mvif)
++				continue;
++			err = mt7915_npu_sta_clear(dev, phy->mt76->band_idx, i);
++			if (err)
++				goto out;
++		}
++	}
++
+ 	if (cmd == SET_KEY && !sta && !mvif->mt76.cipher) {
+ 		mvif->mt76.cipher = mt76_connac_mcu_get_cipher(key->cipher);
+ 		mt7915_mcu_add_bss_info(phy, vif, true);
+@@ -897,6 +926,12 @@
+ {
+ 	struct mt7915_dev *dev = container_of(mdev, struct mt7915_dev, mt76);
+ 	struct mt7915_sta *msta = (struct mt7915_sta *)sta->drv_priv;
++	int err;
++
++	err = mt7915_npu_sta_clear(dev, msta->vif->phy->mt76->band_idx,
++				   msta->wcid.idx);
++	if (err)
++		dev_warn(mdev->dev, "NPU station cleanup failed: %d\n", err);
+ 
+ 	mt7915_mac_wtbl_update(dev, msta->wcid.idx,
+ 			       MT_WTBL_UPDATE_ADM_COUNT_CLEAR);
+@@ -976,10 +1011,25 @@
+ 		mt76_rx_aggr_start(&dev->mt76, &msta->wcid, tid, ssn,
+ 				   params->buf_size);
+ 		ret = mt7915_mcu_add_rx_ba(dev, params, true);
++		/* The NPU also reorders protected frames; PN stays with
++		 * mac80211, so authorize the BA session here.
++		 */
++		if (!ret && msta->npu_authorized &&
++		    vif->type == NL80211_IFTYPE_AP)
++			ret = mt7915_npu_ba(dev, msta->vif->phy->mt76->band_idx,
++					    msta->wcid.idx, tid, ssn,
++					    params->buf_size);
++		if (ret) {
++			mt7915_mcu_add_rx_ba(dev, params, false);
++			mt76_rx_aggr_stop(&dev->mt76, &msta->wcid, tid);
++		}
+ 		break;
+ 	case IEEE80211_AMPDU_RX_STOP:
+ 		mt76_rx_aggr_stop(&dev->mt76, &msta->wcid, tid);
+-		ret = mt7915_mcu_add_rx_ba(dev, params, false);
++		ret = mt7915_npu_ba(dev, msta->vif->phy->mt76->band_idx,
++				    msta->wcid.idx, tid, 0, 0);
++		if (!ret)
++			ret = mt7915_mcu_add_rx_ba(dev, params, false);
+ 		break;
+ 	case IEEE80211_AMPDU_TX_OPERATIONAL:
+ 		mtxq->aggr = true;
+@@ -1840,6 +1890,34 @@
+ 				     MT7915_WATCHDOG_TIME);
+ }
+ 
++/*
++ * The NPU only admits BA sessions for authorized stations, so mirror the
++ * mac80211 state transitions and tell the firmware to drop its state when
++ * a station leaves AUTHORIZED.
++ */
++static int mt7915_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
++			    struct ieee80211_sta *sta,
++			    enum ieee80211_sta_state old_state,
++			    enum ieee80211_sta_state new_state)
++{
++	struct mt7915_dev *dev = mt7915_hw_dev(hw);
++	struct mt7915_sta *msta = (struct mt7915_sta *)sta->drv_priv;
++	struct mt7915_vif *mvif = (struct mt7915_vif *)vif->drv_priv;
++	int ret;
++
++	if (old_state == IEEE80211_STA_AUTHORIZED && new_state < old_state) {
++		ret = mt7915_npu_sta_clear(dev, mvif->phy->mt76->band_idx,
++					   msta->wcid.idx);
++		if (ret)
++			return ret;
++		msta->npu_authorized = false;
++	}
++	ret = mt76_sta_state(hw, vif, sta, old_state, new_state);
++	if (!ret && new_state == IEEE80211_STA_AUTHORIZED)
++		msta->npu_authorized = true;
++	return ret;
++}
++
+ const struct ieee80211_ops mt7915_ops = {
+ 	.add_chanctx = ieee80211_emulate_add_chanctx,
+ 	.remove_chanctx = ieee80211_emulate_remove_chanctx,
+@@ -1856,7 +1934,7 @@
+ 	.bss_info_changed = mt7915_bss_info_changed,
+ 	.start_ap = mt7915_start_ap,
+ 	.stop_ap = mt7915_stop_ap,
+-	.sta_state = mt76_sta_state,
++	.sta_state = mt7915_sta_state,
+ 	.sta_pre_rcu_remove = mt76_sta_pre_rcu_remove,
+ 	.link_sta_rc_update = mt7915_sta_rc_update,
+ 	.set_key = mt7915_set_key,
 --- a/mt7915/pci.c
 +++ b/mt7915/pci.c
 @@ -198,6 +198,7 @@
