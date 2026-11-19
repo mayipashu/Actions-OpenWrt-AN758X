@@ -1,5 +1,5 @@
 From: mayipashu <mayipashu@users.noreply.github.com>
-Date: Wed, 19 Nov 2026 15:00:00 +0800
+Date: Wed, 19 Nov 2026 16:30:00 +0800
 Subject: [PATCH] mt7915: add NPU receive offload for PCIe MT7915/MT7916
 
 Port the NPU receive transport from Sirherobrine23/mt76 (branch
@@ -8,18 +8,25 @@ EN7581.
 
 Adaptations required before the code applies here:
 
+  - The host bridge parent node is "pcie@0,0" whose reg window is empty
+    (all zeros) on EN7581; the controller "pcie@<addr>" is one level up
+    and carries the real register range. Walk up when the bridge node
+    has no usable reg.
   - EN7581 maps its PCIe controllers at 0x1fc0/0x1fc2 000 rather than the
     EN7523 0x1fa9{1,2}000 the fork assumes. Accept both pairs and extend
-    the P0/P1 port mapping;
-  - the AIROHA_NPU_WLAN_MT7915/_DBDC/_MT7916 chip-model enum is only used
+    the P0/P1 port mapping.
+  - The AIROHA_NPU_WLAN_MT7915/_DBDC/_MT7916 chip-model enum is only used
     in the fork but never defined (it depends on an out-of-tree airoha
     header). Define it locally with the vendor BSP numbering and expose a
     mt7915_npu_model module parameter so the value can be overridden at
-    runtime;
-  - the fork's main.c targets a newer mac80211 API and cannot be taken
+    runtime.
+  - The fork's main.c targets a newer mac80211 API and cannot be taken
     wholesale. The NPU hooks are added surgically instead: station
     alloc/remove cleanup, RX BA start/stop authorization, key-change BA
     reset, and a sta_state wrapper tracking AUTHORIZED transitions.
+  - mt7915_npu_init() returning -EOPNOTSUPP (unsupported board) must not
+    abort mt7915_dma_init(): fall back to CPU forwarding instead, so Wi-Fi
+    keeps working even when the NPU transport is unavailable.
 
 When the transport is active the NPU owns the Wi-Fi data RX rings: their
 completion interrupts are masked and the RX queues are allocated through
@@ -56,18 +63,21 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
  	irq_mask = reset ? MT_INT_MCU_CMD : irq_mask;
  
  	mt7915_irq_enable(dev, irq_mask);
-@@ -421,6 +433,10 @@
+@@ -421,6 +433,13 @@
  
  	mt7915_dma_disable(dev, true);
  
 +	ret = mt7915_npu_init(dev);
-+	if (ret)
++	if (ret && ret != -EOPNOTSUPP)
 +		return ret;
++	/* -EOPNOTSUPP：NPU 不可用（板型不支持或地址不匹配），
++	 * 回退纯 CPU 转发，绝不让 WiFi 初始化因此失败。 */
++
 +
  	if (mtk_wed_device_active(&mdev->mmio.wed)) {
  		if (!is_mt798x(mdev)) {
  			u8 wed_control_rx1 = is_mt7915(mdev) ? 1 : 2;
-@@ -516,7 +532,13 @@
+@@ -516,7 +535,13 @@
  			mdev->q_rx[MT_RXQ_MAIN].wed = &mdev->mmio.wed;
  		}
  
@@ -82,7 +92,7 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
  				       MT_RXQ_ID(MT_RXQ_MAIN),
  				       MT7915_RX_RING_SIZE,
  				       MT_RX_BUF_SIZE,
-@@ -556,7 +578,13 @@
+@@ -556,7 +581,13 @@
  		}
  
  		/* rx data queue for band1 */
@@ -372,7 +382,7 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
 +	default n
 --- /dev/null
 +++ b/mt7915/npu.c
-@@ -0,0 +1,797 @@
+@@ -0,0 +1,807 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/* Airoha legacy NPU receive transport for PCIe MT7915/MT7916 radios. */
 +#include <linux/debugfs.h>
@@ -778,13 +788,23 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
 +	struct mt7915_npu *priv;
 +	struct airoha_npu *npu;
 +	struct pci_host_bridge *bridge;
++	struct device_node *ctrl;
 +	struct resource res;
 +	enum airoha_npu_wlan_chip model;
 +	u8 queue;
 +	int i, j, err;
 +
++	/*
++	 * The controller node is the "pcie@<addr>" parent of the host bridge.
++	 * Resolving the resource on the bridge node itself yields the empty
++	 * inbound window (all zeros), so walk up to the controller, which is
++	 * the node that actually carries the register range.
++	 */
 +	bridge = pci_find_host_bridge(to_pci_dev(device)->bus);
-+	err = of_address_to_resource(bridge->dev.parent->of_node, 0, &res);
++	ctrl = bridge->dev.parent->of_node;
++	if (!of_find_property(ctrl, "reg", NULL) && ctrl->parent)
++		ctrl = ctrl->parent;
++	err = of_address_to_resource(ctrl, 0, &res);
 +	if (err)
 +		return err;
 +	/* EN7523 maps its two PCIe controllers at 0x1fa9{1,2}000; the

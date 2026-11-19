@@ -290,17 +290,33 @@ if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
   # ---------------------------------------------------------
   KVER="$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/airoha/Makefile 2>/dev/null || echo 6.18)"
   KPATCH_DIR="target/linux/airoha/patches-${KVER}"
-  # 内核补丁：400 RX-only 内存区可选、401 legacy WLAN mailbox ABI
+  # 内核补丁：仅 400（RX-only 内存区可选）。
+  #
+  # ⚠ 401（legacy BSP ABI）在本阶段【故意不注入】：
+  #   实机实测当前 NPU 用上游标准启动流程就正常
+  #   （fw version 1456.62 / npu_attached=1），而 401 会用
+  #   BOOT_CONFIG=0 + TRIGGER 脉冲替换掉那套流程、跳过 MIB/BOOT_BASE
+  #   配置。那是逆向推测、从未验证，属于「改坏本来能用的东西」。
+  #   只有在 step 1 证明「通用固件不认 WLAN 命令」之后，
+  #   把 NPU_LEGACY_ABI=true 打开才会注入它。
   if [ -d "$KPATCH_DIR" ]; then
-    for pn in 400-net-airoha-npu-support-wlan-rx-only-offload \
-              401-net-airoha-npu-legacy-bsp-abi; do
+    pn=400-net-airoha-npu-support-wlan-rx-only-offload
+    if [ -f "$GITHUB_WORKSPACE/patches/airoha/$pn.patch" ]; then
+      cp "$GITHUB_WORKSPACE/patches/airoha/$pn.patch" "$KPATCH_DIR/$pn.patch"
+      echo "✅ 内核补丁已注入：$pn"
+    else
+      echo "::warning::内核补丁缺失：$pn.patch"
+    fi
+
+    if [ "${NPU_LEGACY_ABI:-false}" = "true" ]; then
+      pn=401-net-airoha-npu-legacy-bsp-abi
       if [ -f "$GITHUB_WORKSPACE/patches/airoha/$pn.patch" ]; then
         cp "$GITHUB_WORKSPACE/patches/airoha/$pn.patch" "$KPATCH_DIR/$pn.patch"
-        echo "✅ 内核补丁已注入：$pn"
-      else
-        echo "::warning::内核补丁缺失：$pn.patch"
+        echo "⚠ 已注入实验性 legacy ABI 补丁：$pn（会替换 NPU 启动流程）"
       fi
-    done
+    else
+      echo "ℹ 跳过 401 legacy ABI 补丁（NPU_LEGACY_ABI != true）"
+    fi
   else
     echo "::warning::未找到内核补丁目录 $KPATCH_DIR"
   fi
