@@ -1,28 +1,28 @@
 From: mayipashu <mayipashu@users.noreply.github.com>
-Date: Wed, 19 Nov 2026 13:00:00 +0800
-Subject: [PATCH] mt7915: add NPU receive offload for legacy MT7916 firmware
+Date: Wed, 19 Nov 2026 15:00:00 +0800
+Subject: [PATCH] mt7915: add NPU receive offload for PCIe MT7915/MT7916
 
 Port the NPU receive transport from Sirherobrine23/mt76 (branch
-npu_en7523) onto the current mt76 baseline, adapted for EN7581.
+npu_en7523, commit 532416f) onto the current mt76 baseline, adapted for
+EN7581.
 
-Three adaptations are needed before the code applies here:
+Adaptations required before the code applies here:
 
-  - EN7581 maps its PCIe controllers at 0x1fc0/0x1fc2 000, not the
+  - EN7581 maps its PCIe controllers at 0x1fc0/0x1fc2 000 rather than the
     EN7523 0x1fa9{1,2}000 the fork assumes. Accept both pairs and extend
-    the P0/P1 port mapping accordingly;
+    the P0/P1 port mapping;
   - the AIROHA_NPU_WLAN_MT7915/_DBDC/_MT7916 chip-model enum is only used
-    in the fork, never defined (it depends on an out-of-tree airoha
+    in the fork but never defined (it depends on an out-of-tree airoha
     header). Define it locally with the vendor BSP numbering and expose a
-    mt7915_npu_model module parameter so the encoding can be overridden on
-    a running system;
-  - the fork's main.c targets a newer mac80211 API, so it is not taken
-    wholesale. Instead the six NPU hooks are added surgically to the
-    existing file: station alloc/remove cleanup, RX BA start/stop
-    authorization, key-change BA reset, and a sta_state wrapper that
-    tracks nan80211's AUTHORIZED transitions.
+    mt7915_npu_model module parameter so the value can be overridden at
+    runtime;
+  - the fork's main.c targets a newer mac80211 API and cannot be taken
+    wholesale. The NPU hooks are added surgically instead: station
+    alloc/remove cleanup, RX BA start/stop authorization, key-change BA
+    reset, and a sta_state wrapper tracking AUTHORIZED transitions.
 
-When active the NPU owns the Wi-Fi data RX rings: their completion
-interrupts are masked and the RX queues are allocated through
+When the transport is active the NPU owns the Wi-Fi data RX rings: their
+completion interrupts are masked and the RX queues are allocated through
 mt7915_npu_rx_ring() so descriptors live in NPU memory. Reordered frames
 then enter the PPE directly instead of travelling through the host CPU.
 
@@ -111,20 +111,7 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
  		}
 --- a/mt7915/main.c
 +++ b/mt7915/main.c
-@@ -252,6 +252,12 @@
- 		goto err;
- 	}
- 
-+	ret = mt7915_npu_sta_clear(dev, mvif->phy->mt76->band_idx, idx);
-+	if (ret) {
-+		mt76_wcid_mask_clear(mdev->wcid_mask, idx);
-+		goto err;
-+	}
-+
- 	INIT_LIST_HEAD(&mvif->sta.rc_list);
- 	mvif->sta.wcid.idx = idx;
- 	mvif->sta.wcid.tx_info |= MT_WCID_TX_INFO_SET;
-@@ -377,7 +383,7 @@
+@@ -377,7 +377,7 @@
  	struct mt76_wcid *wcid = &msta->wcid;
  	u8 *wcid_keyidx = &wcid->hw_key_idx;
  	int idx = key->keyidx;
@@ -133,7 +120,7 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
  
  	if (sta && !wcid->sta) {
  		if (cmd != SET_KEY)
-@@ -417,6 +423,29 @@
+@@ -417,6 +417,29 @@
  
  	mutex_lock(&dev->mt76.mutex);
  
@@ -163,6 +150,19 @@ Signed-off-by: mayipashu <mayipashu@users.noreply.github.com>
  	if (cmd == SET_KEY && !sta && !mvif->mt76.cipher) {
  		mvif->mt76.cipher = mt76_connac_mcu_get_cipher(key->cipher);
  		mt7915_mcu_add_bss_info(phy, vif, true);
+@@ -767,6 +790,12 @@
+ 	if (idx < 0)
+ 		return -ENOSPC;
+ 
++	/* Drop any BA state the NPU still holds for this slot. */
++	if (mt7915_npu_sta_clear(dev, mvif->phy->mt76->band_idx, idx)) {
++		mt76_wcid_mask_clear(mdev->wcid_mask, idx);
++		return -EBUSY;
++	}
++
+ 	INIT_LIST_HEAD(&msta->rc_list);
+ 	INIT_LIST_HEAD(&msta->wcid.poll_list);
+ 	msta->vif = mvif;
 @@ -897,6 +926,12 @@
  {
  	struct mt7915_dev *dev = container_of(mdev, struct mt7915_dev, mt76);
