@@ -290,14 +290,43 @@ if [ "${ADD_NPU_OFFLOAD:-false}" = "true" ]; then
   # ---------------------------------------------------------
   KVER="$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/airoha/Makefile 2>/dev/null || echo 6.18)"
   KPATCH_DIR="target/linux/airoha/patches-${KVER}"
-  NPU_PATCH_SRC="$GITHUB_WORKSPACE/patches/airoha/400-net-airoha-npu-support-wlan-rx-only-offload.patch"
-  NPU_PATCH_DST="$KPATCH_DIR/400-net-airoha-npu-support-wlan-rx-only-offload.patch"
-
-  if [ -d "$KPATCH_DIR" ] && [ -f "$NPU_PATCH_SRC" ]; then
-    cp "$NPU_PATCH_SRC" "$NPU_PATCH_DST"
-    echo "✅ NPU RX-only 补丁已注入：$NPU_PATCH_DST"
+  # 内核补丁：400 RX-only 内存区可选、401 legacy WLAN mailbox ABI
+  if [ -d "$KPATCH_DIR" ]; then
+    for pn in 400-net-airoha-npu-support-wlan-rx-only-offload \
+              401-net-airoha-npu-legacy-bsp-abi; do
+      if [ -f "$GITHUB_WORKSPACE/patches/airoha/$pn.patch" ]; then
+        cp "$GITHUB_WORKSPACE/patches/airoha/$pn.patch" "$KPATCH_DIR/$pn.patch"
+        echo "✅ 内核补丁已注入：$pn"
+      else
+        echo "::warning::内核补丁缺失：$pn.patch"
+      fi
+    done
   else
-    echo "::warning::NPU RX-only 补丁未注入（KPATCH_DIR=$KPATCH_DIR 是否存在：$([ -d "$KPATCH_DIR" ] && echo yes || echo no)）"
+    echo "::warning::未找到内核补丁目录 $KPATCH_DIR"
+  fi
+
+  # ---------------------------------------------------------
+  # mt76 补丁：mt7915 NPU 接收卸载（来源 Sirherobrine23/mt76
+  # 分支 npu_en7523，已适配 EN7581 PCIe 基址 0x1fc0/0x1fc2 与
+  # 本地 chip-model 枚举）。
+  #
+  # OpenWrt 的 mt76 包按 quilt 规则读取 ./patches/*.patch，文件名
+  # 数字前缀决定顺序，所以直接放进包目录即可。
+  # ---------------------------------------------------------
+  MT76_DIR="package/kernel/mt76"
+  MT76_PATCH_SRC="$GITHUB_WORKSPACE/patches/airoha/402-mt76-mt7915-add-npu-rx-offload.patch"
+  if [ -d "$MT76_DIR" ] && [ -f "$MT76_PATCH_SRC" ]; then
+    mkdir -p "$MT76_DIR/patches"
+    cp "$MT76_PATCH_SRC" "$MT76_DIR/patches/402-mt7915-add-npu-rx-offload.patch"
+    # 包 Makefile 里加 MT7915_NPU 开关：m=mt76 编译 npu.o + mt7915 npu.o
+    if ! grep -q "MT7915_NPU" "$MT76_DIR/Makefile"; then
+      # 在 kmod-mt7915e 段的 CONFIG_MT7915E=m 之后插入 airoha 分支
+      perl -0pi -e 's/(  PKG_MAKE_FLAGS \+= CONFIG_MT7915E=m\n)(?!  ifdef CONFIG_TARGET_airoha)/$1  ifdef CONFIG_TARGET_airoha_an7581\n    PKG_MAKE_FLAGS += CONFIG_MT76_NPU=y\n    PKG_MAKE_FLAGS += CONFIG_MT7915_NPU=y\n    NOSTDINC_FLAGS += -DCONFIG_MT76_NPU\n    NOSTDINC_FLAGS += -DCONFIG_MT7915_NPU\n  endif\n/' "$MT76_DIR/Makefile"
+    fi
+    echo "✅ mt76 NPU 补丁已注入（含 Makefile MT7915_NPU 开关）"
+    grep -A6 "kmod-mt7915e" "$MT76_DIR/Makefile" | head -8
+  else
+    echo "::warning::mt76 NPU 补丁未注入（$MT76_DIR 或补丁缺失）"
   fi
 else
   echo "ℹ ADD_NPU_OFFLOAD != true，保持默认（无 WiFi 硬件转发）"
